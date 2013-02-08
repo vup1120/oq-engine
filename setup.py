@@ -50,7 +50,5 @@ setup(
                                "bin/oq_log_sink"]},
     scripts=["openquake/bin/oq_create_db", "openquake/bin/oq_restart_workers"],
 
-    namespace_packages=['openquake'],
-
     zip_safe=False,
     )
