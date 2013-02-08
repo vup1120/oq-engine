@@ -14,16 +14,16 @@ celeryconfig.py file works with your python-celery setup.
 Feel free to copy /usr/openquake/celeryconfig.py and revise it as needed.
 """
 
-PY_MODULES = ['openquake.engine.bin.cache_gc', 'openquake.engine.bin.oqscript']
+PY_MODULES = ['oqengine.bin.cache_gc', 'oqengine.bin.oqscript']
 
 setup(
     entry_points={
         "console_scripts": [
-            "openquake = openquake.engine.bin.oqscript:main",
-            "oq_cache_gc = openquake.engine.bin.cache_gc:main",
-            "oq_monitor = openquake.engine.bin.openquake_supervisor:main",
+            "openquake = oqengine.bin.oqscript:main",
+            "oq_cache_gc = oqengine.bin.cache_gc:main",
+            "oq_monitor = oqengine.bin.openquake_supervisor:main",
             ]},
-    name="openquake.engine",
+    name="oqengine",
     version=version,
     author="The OpenQuake team",
     author_email="devops@openquake.org",
@@ -39,8 +39,8 @@ setup(
         ],
     packages=find_packages(exclude=["qa_tests", "qa_tests.*",
                                     "tools", "tests", "tests.*",
-                                    "openquake.engine.bin",
-                                    "openquake.engine.bin.*"]),
+                                    "oqengine.bin",
+                                    "oqengine.bin.*"]),
     py_modules=PY_MODULES,
 
     include_package_data=True,

@@ -17,9 +17,9 @@ import unittest
 import mock
 
 from tests.utils import helpers
-from openquake.engine.calculators.risk import general as risk
-from openquake.engine.db import models
-from openquake.engine.utils import stats
+from oqengine.calculators.risk import general as risk
+from oqengine.db import models
+from oqengine.utils import stats
 
 
 class BaseRiskCalculatorTestCase(unittest.TestCase):
@@ -133,7 +133,7 @@ class RiskCalculatorTestCase(BaseRiskCalculatorTestCase):
     def test_pre_execute(self):
         # Most of the pre-execute functionality is implement in other methods.
         # For this test, just make sure each method gets called.
-        path = ('openquake.engine.calculators.risk.general.BaseRiskCalculator')
+        path = ('oqengine.calculators.risk.general.BaseRiskCalculator')
         patches = (
             helpers.patch(
                 '%s.%s' % (path, '_store_exposure')),

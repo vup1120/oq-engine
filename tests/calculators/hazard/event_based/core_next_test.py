@@ -21,10 +21,10 @@ import kombu
 
 from nose.plugins.attrib import attr
 
-from openquake.engine.db import models
-from openquake.engine.calculators import base
-from openquake.engine.calculators.hazard.event_based import core_next
-from openquake.engine.utils import stats
+from oqengine.db import models
+from oqengine.calculators import base
+from oqengine.calculators.hazard.event_based import core_next
+from oqengine.utils import stats
 
 from tests.utils import helpers
 

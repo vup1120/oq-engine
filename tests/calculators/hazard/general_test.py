@@ -17,15 +17,15 @@
 
 import unittest
 
-import openquake.hazardlib
+import oqhazardlib
 
-from openquake.hazardlib import geo as hazardlib_geo
+from oqhazardlib import geo as hazardlib_geo
 from nose.plugins.attrib import attr
 
-from openquake.engine import engine2
-from openquake.engine.calculators.hazard import general
-from openquake.engine.calculators.hazard.classical import core as cls_core
-from openquake.engine.db import models
+from oqengine import engine2
+from oqengine.calculators.hazard import general
+from oqengine.calculators.hazard.classical import core as cls_core
+from oqengine.db import models
 
 from tests.utils import helpers
 
@@ -77,7 +77,7 @@ class StoreSiteModelTestCase(unittest.TestCase):
 
 class ValidateSiteModelTestCase(unittest.TestCase):
     """Tests for
-    :function:`openquake.engine.calculators.hazard.general.\
+    :function:`oqengine.calculators.hazard.general.\
 validate_site_model`.
     """
 
@@ -323,7 +323,7 @@ class ClosestSiteModelTestCase(unittest.TestCase):
 class ImtsToHazardlibTestCase(unittest.TestCase):
     """
     Tests for
-    :func:`openquake.engine.calculators.hazard.general.im_dict_to_hazardlib`.
+    :func:`oqengine.calculators.hazard.general.im_dict_to_hazardlib`.
     """
 
     def test_im_dict_to_hazardlib(self):
@@ -339,16 +339,16 @@ class ImtsToHazardlibTestCase(unittest.TestCase):
         }
 
         expected = {
-            openquake.hazardlib.imt.PGA(): [1, 2],
-            openquake.hazardlib.imt.PGV(): [2, 3],
-            openquake.hazardlib.imt.PGD(): [3, 4],
-            openquake.hazardlib.imt.SA(0.1, models.DEFAULT_SA_DAMPING): [
+            oqhazardlib.imt.PGA(): [1, 2],
+            oqhazardlib.imt.PGV(): [2, 3],
+            oqhazardlib.imt.PGD(): [3, 4],
+            oqhazardlib.imt.SA(0.1, models.DEFAULT_SA_DAMPING): [
                 0.1, 0.2],
-            openquake.hazardlib.imt.SA(0.025, models.DEFAULT_SA_DAMPING): [
+            oqhazardlib.imt.SA(0.025, models.DEFAULT_SA_DAMPING): [
                 0.2, 0.3],
-            openquake.hazardlib.imt.IA(): [0.3, 0.4],
-            openquake.hazardlib.imt.RSD(): [0.4, 0.5],
-            openquake.hazardlib.imt.MMI(): [0.5, 0.6],
+            oqhazardlib.imt.IA(): [0.3, 0.4],
+            oqhazardlib.imt.RSD(): [0.4, 0.5],
+            oqhazardlib.imt.MMI(): [0.5, 0.6],
         }
 
         actual = general.im_dict_to_hazardlib(imts_in)

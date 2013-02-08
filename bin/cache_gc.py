@@ -36,8 +36,8 @@ try:
 except ImportError:
     pass
 
-from openquake.engine import kvs
-from openquake.engine import logs
+from oqengine import kvs
+from oqengine import logs
 
 LOG = logs.LOG
 

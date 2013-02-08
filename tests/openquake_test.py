@@ -14,13 +14,13 @@
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for code in :mod:`openquake.engine.__init__`.
+Tests for code in :mod:`oqengine.__init__`.
 """
 
 import os
 import unittest
 
-import openquake.engine
+import oqengine
 
 from mock import patch
 
@@ -29,32 +29,32 @@ class NoDistributeTestCase(unittest.TestCase):
 
     def test_no_distribute_not_set(self):
         with patch.dict('os.environ'):
-            if openquake.engine.NO_DISTRIBUTE_VAR in os.environ:
-                os.environ.pop(openquake.engine.NO_DISTRIBUTE_VAR)
+            if oqengine.NO_DISTRIBUTE_VAR in os.environ:
+                os.environ.pop(oqengine.NO_DISTRIBUTE_VAR)
 
-            self.assertFalse(openquake.engine.no_distribute())
+            self.assertFalse(oqengine.no_distribute())
 
     def test_no_distribute_set_true(self):
         with patch.dict('os.environ'):
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = '1'
-            self.assertTrue(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = '1'
+            self.assertTrue(oqengine.no_distribute())
 
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = 'true'
-            self.assertTrue(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = 'true'
+            self.assertTrue(oqengine.no_distribute())
 
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = 'yes'
-            self.assertTrue(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = 'yes'
+            self.assertTrue(oqengine.no_distribute())
 
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = 't'
-            self.assertTrue(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = 't'
+            self.assertTrue(oqengine.no_distribute())
 
     def test_no_distribute_set_false(self):
         with patch.dict('os.environ'):
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = '0'
-            self.assertFalse(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = '0'
+            self.assertFalse(oqengine.no_distribute())
 
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = 'false'
-            self.assertFalse(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = 'false'
+            self.assertFalse(oqengine.no_distribute())
 
-            os.environ[openquake.engine.NO_DISTRIBUTE_VAR] = 'blarg'
-            self.assertFalse(openquake.engine.no_distribute())
+            os.environ[oqengine.NO_DISTRIBUTE_VAR] = 'blarg'
+            self.assertFalse(oqengine.no_distribute())

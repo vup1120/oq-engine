@@ -15,7 +15,7 @@
 
 from django.contrib.gis.geos.point import Point
 
-from openquake.engine.db import models
+from oqengine.db import models
 
 GmfNode = models._GroundMotionFieldNode
 

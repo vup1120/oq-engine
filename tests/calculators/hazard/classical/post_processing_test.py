@@ -37,11 +37,11 @@ from scipy.stats import mstats
 from tests.utils import helpers
 from tests.utils.helpers import random_location_generator
 
-from openquake.engine.db import models
-from openquake.engine.calculators import post_processing
-from openquake.engine.calculators.hazard.classical import (
+from oqengine.db import models
+from oqengine.calculators import post_processing
+from oqengine.calculators.hazard.classical import (
     post_processing as post_proc)
-from openquake.engine.calculators.hazard.classical.post_processing import (
+from oqengine.calculators.hazard.classical.post_processing import (
     setup_tasks, mean_curves, quantile_curves, persite_result_decorator,
     mean_curves_weighted, quantile_curves_weighted,
     hazard_curves_to_hazard_map)
@@ -50,7 +50,7 @@ aaae = numpy.testing.assert_array_almost_equal
 
 
 # package prefix used for mock.patching
-MOCK_PREFIX = "openquake.engine.calculators.hazard.classical.post_processing"
+MOCK_PREFIX = "oqengine.calculators.hazard.classical.post_processing"
 
 
 class PostProcessingTestCase(unittest.TestCase):

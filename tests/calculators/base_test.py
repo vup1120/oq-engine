@@ -17,7 +17,7 @@
 import kombu
 import unittest
 
-from openquake.engine.calculators import base
+from oqengine.calculators import base
 
 
 class ExchangeConnArgsTestCase(unittest.TestCase):

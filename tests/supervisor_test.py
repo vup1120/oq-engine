@@ -19,12 +19,12 @@ import unittest
 import logging
 from datetime import datetime
 
-from openquake.engine import engine
-from openquake.engine import engine2
-from openquake.engine.db.models import ErrorMsg
-from openquake.engine.db.models import JobStats
-from openquake.engine.supervising import supervisor
-from openquake.engine.utils import stats
+from oqengine import engine
+from oqengine import engine2
+from oqengine.db.models import ErrorMsg
+from oqengine.db.models import JobStats
+from oqengine.supervising import supervisor
+from oqengine.utils import stats
 
 from tests.utils.helpers import patch
 from tests.utils.helpers import DbTestCase, cleanup_loggers
@@ -59,7 +59,7 @@ class SupervisorHelpersTestCase(DbTestCase, unittest.TestCase):
         self.assertTrue(cstats.stop_time is not None)
 
     def test_cleanup_after_job(self):
-        with patch('openquake.engine.kvs.cache_gc') as cache_gc:
+        with patch('oqengine.kvs.cache_gc') as cache_gc:
             supervisor.cleanup_after_job(self.job.id)
 
             self.assertEqual(1, cache_gc.call_count)
@@ -87,16 +87,16 @@ class SupervisorTestCase(unittest.TestCase):
             self.patchers.append(patcher)
             setattr(self, attr, patcher.start())
 
-        start_patch('openquake.engine.supervising.is_pid_running')
+        start_patch('oqengine.supervising.is_pid_running')
 
         # Patch the actions taken by the supervisor
-        start_patch('openquake.engine.supervising.supervisor.\
+        start_patch('oqengine.supervising.supervisor.\
 record_job_stop_time')
         start_patch(
-            'openquake.engine.supervising.supervisor.cleanup_after_job')
-        start_patch('openquake.engine.supervising.supervisor.terminate_job')
-        start_patch('openquake.engine.supervising.supervisor.get_job_status')
-        start_patch('openquake.engine.supervising.supervisor'
+            'oqengine.supervising.supervisor.cleanup_after_job')
+        start_patch('oqengine.supervising.supervisor.terminate_job')
+        start_patch('oqengine.supervising.supervisor.get_job_status')
+        start_patch('oqengine.supervising.supervisor'
                '.update_job_status_and_error_msg')
 
         logging.root.setLevel(logging.CRITICAL)
@@ -113,7 +113,7 @@ record_job_stop_time')
         # the job process is running
         self.is_pid_running.return_value = True
 
-        with patch('openquake.engine.supervising.' \
+        with patch('oqengine.supervising.' \
                    'supervisor.SupervisorLogMessageConsumer.run') as run:
 
             def run_(mc):
@@ -244,9 +244,9 @@ class AbortDueToFailedNodesTestCase(unittest.TestCase):
 
     def setUp(self):
         self.monitor_patch = patch(
-            "openquake.engine.utils.monitor.count_failed_nodes")
+            "oqengine.utils.monitor.count_failed_nodes")
         self.stats_patch = patch(
-            "openquake.engine.utils.stats.get_progress_timing_data")
+            "oqengine.utils.stats.get_progress_timing_data")
         self.monitor_mock = self.monitor_patch.start()
         self.stats_mock = self.stats_patch.start()
 

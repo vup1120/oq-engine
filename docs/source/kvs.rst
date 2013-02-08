@@ -11,9 +11,9 @@ store (currently Redis).
 The :mod:`kvs` Module
 ------------------------
 
-.. automodule:: openquake.engine.kvs
+.. automodule:: oqengine.kvs
 
 The :mod:`tokens` Module
 ------------------------
 
-.. automodule:: openquake.engine.kvs.tokens
+.. automodule:: oqengine.kvs.tokens

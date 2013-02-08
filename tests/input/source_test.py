@@ -17,16 +17,16 @@
 import decimal
 import unittest
 
-from openquake.hazardlib import geo
-from openquake.hazardlib import mfd
-from openquake.hazardlib import pmf
-from openquake.hazardlib import scalerel
-from openquake.hazardlib import source
-from openquake.nrmllib import parsers as nrml_parsers
+from oqhazardlib import geo
+from oqhazardlib import mfd
+from oqhazardlib import pmf
+from oqhazardlib import scalerel
+from oqhazardlib import source
+from nrmllib import parsers as nrml_parsers
 from shapely import wkt
 
-from openquake.engine.db import models
-from openquake.engine.input import source as source_input
+from oqengine.db import models
+from oqengine.input import source as source_input
 
 from tests.utils import helpers
 
@@ -240,7 +240,7 @@ class NrmlSourceToHazardlibTestCase(unittest.TestCase):
 
 class SourceDBWriterTestCase(unittest.TestCase):
     """Test DB serialization of seismic sources using
-    :class:`openquake.engine.input.source.SourceDBWriter`.
+    :class:`oqengine.input.source.SourceDBWriter`.
     """
 
     def test_serialize(self):

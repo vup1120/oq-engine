@@ -13,17 +13,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
-import openquake.nrmllib
+import nrmllib
 import unittest
 
-import openquake.engine
+import oqengine
 
 from lxml import etree
 from mock import patch
 from numpy import median
 
 from tests.utils import helpers
-from openquake.engine.db import models
+from oqengine.db import models
 
 
 class BaseQATestCase(unittest.TestCase):
@@ -42,13 +42,13 @@ class BaseQATestCase(unittest.TestCase):
         :param list exports:
             A list of export format types. Currently only 'xml' is supported.
         :returns:
-            The completed :class:`~openquake.engine.db.models.OqJob`.
+            The completed :class:`~oqengine.db.models.OqJob`.
         :raises:
             :exc:`AssertionError` if the job was not successfully run.
         """
         # Set OQ_NO_DISTRIBUTE to true, so we can benefit from including these
         # tests in our code coverage
-        with patch.dict('os.environ', {openquake.engine.NO_DISTRIBUTE_VAR: '1'}):
+        with patch.dict('os.environ', {oqengine.NO_DISTRIBUTE_VAR: '1'}):
             completed_job = helpers.run_hazard_job(cfg, exports=exports)
 
             self.assertEqual('complete', completed_job.status)
@@ -70,7 +70,7 @@ class BaseQATestCase(unittest.TestCase):
 
 
 def validates_against_xml_schema(xml_instance_path,
-                                 schema_path=openquake.nrmllib.nrml_schema_file()):
+                                 schema_path=nrmllib.nrml_schema_file()):
     """
     Check whether an XML file validates against an XML schema.
     """

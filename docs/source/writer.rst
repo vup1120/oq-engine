@@ -10,7 +10,7 @@ The Jobber class is responsible to evaluate the configuration settings and to ex
 The :mod:`writer` Module
 ------------------------
 
-.. automodule:: openquake.engine.writer
+.. automodule:: oqengine.writer
     :members:
     :undoc-members:
     :show-inheritance:

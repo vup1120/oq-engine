@@ -18,13 +18,13 @@ import shutil
 import tempfile
 import unittest
 
-import openquake.nrmllib
+import nrmllib
 
 from nose.plugins.attrib import attr
 
-from openquake.engine.db import models
-from openquake.engine.export import core as export_core
-from openquake.engine.export import risk
+from oqengine.db import models
+from oqengine.export import core as export_core
+from oqengine.export import risk
 
 from tests.utils import helpers
 
@@ -35,7 +35,7 @@ def _number_of(elem_name, tree):
     return the number of occurrences of the element in a given XML document.
     """
     expr = '//%s' % elem_name
-    return len(tree.xpath(expr, namespaces=openquake.nrmllib.PARSE_NS_MAP))
+    return len(tree.xpath(expr, namespaces=nrmllib.PARSE_NS_MAP))
 
 
 class BaseExportTestCase(unittest.TestCase):

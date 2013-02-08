@@ -19,13 +19,13 @@
 
 import unittest
 
-from openquake.engine.db import routers
-from openquake.engine.db import models as oq
+from oqengine.db import routers
+from oqengine.db import models as oq
 
 
 class OQRouterTestCase(unittest.TestCase):
     '''
-    Tests for the :py:class:`openquake.engine.db.routers.OQRouter` class.
+    Tests for the :py:class:`oqengine.db.routers.OQRouter` class.
     '''
     def setUp(self):
         self.router = routers.OQRouter()

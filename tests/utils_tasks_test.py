@@ -26,7 +26,7 @@ import unittest
 import time
 import uuid
 
-from openquake.engine.utils import tasks
+from oqengine.utils import tasks
 
 from tests.utils.helpers import patch
 from tests.utils.helpers import TestStore

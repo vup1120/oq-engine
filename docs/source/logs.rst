@@ -10,7 +10,7 @@ Set up some system-wide loggers
 The :mod:`logs` Module
 ------------------------
 
-.. automodule:: openquake.engine.logs
+.. automodule:: oqengine.logs
     :members:
     :undoc-members:
     :show-inheritance:

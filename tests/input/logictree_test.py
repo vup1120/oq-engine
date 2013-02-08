@@ -29,15 +29,15 @@ import shutil
 
 from mock import Mock
 
-import openquake.hazardlib
-from openquake.hazardlib.pmf import PMF
-from openquake.hazardlib.mfd import TruncatedGRMFD, EvenlyDiscretizedMFD
-from openquake.hazardlib.gsim.sadigh_1997 import SadighEtAl1997
-from openquake.hazardlib.gsim.chiou_youngs_2008 import ChiouYoungs2008
-from openquake.nrmllib.parsers import SourceModelParser
+import oqhazardlib
+from oqhazardlib.pmf import PMF
+from oqhazardlib.mfd import TruncatedGRMFD, EvenlyDiscretizedMFD
+from oqhazardlib.gsim.sadigh_1997 import SadighEtAl1997
+from oqhazardlib.gsim.chiou_youngs_2008 import ChiouYoungs2008
+from nrmllib.parsers import SourceModelParser
 
-from openquake.engine.input import logictree
-from openquake.engine.input.source import nrml_to_hazardlib
+from oqengine.input import logictree
+from oqengine.input.source import nrml_to_hazardlib
 
 from tests.utils import helpers
 
@@ -917,7 +917,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
                                     applyToTectonicRegionType="Volcanic">
                     <logicTreeBranch branchID="b1">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -927,7 +927,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
                             applyToTectonicRegionType="Subduction IntraSlab">
                     <logicTreeBranch branchID="b2">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -999,7 +999,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
                                     branchSetID="bs1"
                                     applyToTectonicRegionType="Volcanic">
                     <logicTreeBranch branchID="b1">
-                        <uncertaintyModel>openquake.hazardlib.gsim.FakeGMPE\
+                        <uncertaintyModel>oqhazardlib.gsim.FakeGMPE\
 </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1010,7 +1010,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
         exc = self._assert_logic_tree_error('gmpe', gmpe, 'base',
                                             set(['Volcanic']),
                                             logictree.ValidationError)
-        error = "module 'openquake.hazardlib.gsim' does not contain name\
+        error = "module 'oqhazardlib.gsim' does not contain name\
  'FakeGMPE'"
         self.assertEqual(exc.message, error,
                         "wrong exception message: %s" % exc.message)
@@ -1024,7 +1024,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
                                     branchSetID="bs1"
                                     applyToTectonicRegionType="Volcanic">
                     <logicTreeBranch branchID="b1">
-                        <uncertaintyModel>openquake.hazardlib.site.Site\
+                        <uncertaintyModel>oqhazardlib.site.Site\
 </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1035,7 +1035,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
         exc = self._assert_logic_tree_error('gmpe', gmpe, 'base',
                                             set(['Volcanic']),
                                             logictree.ValidationError)
-        error = "<class 'openquake.hazardlib.site.Site'> is not a gmpe class"
+        error = "<class 'oqhazardlib.site.Site'> is not a gmpe class"
         self.assertEqual(exc.message, error,
                         "wrong exception message: %s" % exc.message)
         self.assertEqual(exc.lineno, 7)
@@ -1101,7 +1101,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
                             applyToTectonicRegionType="Subduction Interface">
                     <logicTreeBranch branchID="b1">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1113,7 +1113,7 @@ class GMPELogicTreeBrokenInputTestCase(unittest.TestCase):
                             applyToTectonicRegionType="Subduction Interface">
                     <logicTreeBranch branchID="b2">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.chiou_youngs_2008.\
+                            oqhazardlib.gsim.chiou_youngs_2008.\
 ChiouYoungs2008
                         </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
@@ -1140,7 +1140,7 @@ ChiouYoungs2008
                             applyToTectonicRegionType="Subduction Interface">
                   <logicTreeBranch branchID="b1">
                     <uncertaintyModel>
-                        openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                        oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                     </uncertaintyModel>
                     <uncertaintyWeight>1.0</uncertaintyWeight>
                   </logicTreeBranch>
@@ -1417,13 +1417,13 @@ class GMPELogicTreeTestCase(unittest.TestCase):
                             applyToTectonicRegionType="Subduction Interface">
                     <logicTreeBranch branchID="b1">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>0.7</uncertaintyWeight>
                     </logicTreeBranch>
                     <logicTreeBranch branchID="b2">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.chiou_youngs_2008.\
+                            oqhazardlib.gsim.chiou_youngs_2008.\
 ChiouYoungs2008
                         </uncertaintyModel>
                         <uncertaintyWeight>0.3</uncertaintyWeight>
@@ -1436,7 +1436,7 @@ ChiouYoungs2008
                             applyToTectonicRegionType="Active Shallow Crust">
                     <logicTreeBranch branchID="b3">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1448,14 +1448,14 @@ ChiouYoungs2008
                             applyToTectonicRegionType="Volcanic">
                     <logicTreeBranch branchID="b4">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.chiou_youngs_2008.\
+                            oqhazardlib.gsim.chiou_youngs_2008.\
 ChiouYoungs2008
                         </uncertaintyModel>
                         <uncertaintyWeight>0.1</uncertaintyWeight>
                     </logicTreeBranch>
                     <logicTreeBranch branchID="b5">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>0.9</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1502,7 +1502,7 @@ class ReadLogicTreesTestCase(unittest.TestCase):
                             applyToTectonicRegionType="Active Shallow Crust">
                     <logicTreeBranch branchID="b3">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>1.0</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1514,14 +1514,14 @@ class ReadLogicTreesTestCase(unittest.TestCase):
                             applyToTectonicRegionType="Volcanic">
                     <logicTreeBranch branchID="b4">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.chiou_youngs_2008.\
+                            oqhazardlib.gsim.chiou_youngs_2008.\
 ChiouYoungs2008
                         </uncertaintyModel>
                         <uncertaintyWeight>0.4</uncertaintyWeight>
                     </logicTreeBranch>
                     <logicTreeBranch branchID="b5">
                         <uncertaintyModel>
-                            openquake.hazardlib.gsim.sadigh_1997.SadighEtAl1997
+                            oqhazardlib.gsim.sadigh_1997.SadighEtAl1997
                         </uncertaintyModel>
                         <uncertaintyWeight>0.6</uncertaintyWeight>
                     </logicTreeBranch>
@@ -1762,20 +1762,20 @@ class BranchSetApplyUncertaintyMethodSignaturesTestCase(unittest.TestCase):
 
 class BranchSetApplyUncertaintyTestCase(unittest.TestCase):
     def setUp(self):
-        self.point_source = openquake.hazardlib.source.PointSource(
+        self.point_source = oqhazardlib.source.PointSource(
             source_id='point', name='point',
-            tectonic_region_type=openquake.hazardlib.const.TRT.\
+            tectonic_region_type=oqhazardlib.const.TRT.\
 ACTIVE_SHALLOW_CRUST,
             mfd=TruncatedGRMFD(a_val=3.1, b_val=0.9, min_mag=5.0,
                                max_mag=6.5, bin_width=0.1),
             nodal_plane_distribution=PMF(
-                [(1, openquake.hazardlib.geo.NodalPlane(0.0, 90.0, 0.0))]
+                [(1, oqhazardlib.geo.NodalPlane(0.0, 90.0, 0.0))]
             ),
             hypocenter_distribution=PMF([(1, 10)]),
             upper_seismogenic_depth=0.0, lower_seismogenic_depth=10.0,
-            magnitude_scaling_relationship=openquake.hazardlib.scalerel.\
+            magnitude_scaling_relationship=oqhazardlib.scalerel.\
 PeerMSR(),
-            rupture_aspect_ratio=1, location=openquake.hazardlib.geo.Point(
+            rupture_aspect_ratio=1, location=oqhazardlib.geo.Point(
                 5, 6),
             rupture_mesh_spacing=1.0
         )
@@ -1819,71 +1819,71 @@ PeerMSR(),
 
 class BranchSetFilterTestCase(unittest.TestCase):
     def setUp(self):
-        self.point = openquake.hazardlib.source.PointSource(
+        self.point = oqhazardlib.source.PointSource(
             source_id='point', name='point',
-            tectonic_region_type=openquake.hazardlib.const.TRT.\
+            tectonic_region_type=oqhazardlib.const.TRT.\
 ACTIVE_SHALLOW_CRUST,
             mfd=TruncatedGRMFD(a_val=3.1, b_val=0.9, min_mag=5.0,
                                max_mag=6.5, bin_width=0.1),
             nodal_plane_distribution=PMF(
-                [(1, openquake.hazardlib.geo.NodalPlane(0.0, 90.0, 0.0))]
+                [(1, oqhazardlib.geo.NodalPlane(0.0, 90.0, 0.0))]
             ),
             hypocenter_distribution=PMF([(1, 10)]),
             upper_seismogenic_depth=0.0, lower_seismogenic_depth=10.0,
-            magnitude_scaling_relationship=openquake.hazardlib.scalerel.\
+            magnitude_scaling_relationship=oqhazardlib.scalerel.\
 PeerMSR(),
-            rupture_aspect_ratio=1, location=openquake.hazardlib.geo.Point(
+            rupture_aspect_ratio=1, location=oqhazardlib.geo.Point(
                 5, 6),
             rupture_mesh_spacing=1.0
         )
-        self.area = openquake.hazardlib.source.AreaSource(
+        self.area = oqhazardlib.source.AreaSource(
             source_id='area', name='area',
-            tectonic_region_type=openquake.hazardlib.const.TRT.\
+            tectonic_region_type=oqhazardlib.const.TRT.\
 ACTIVE_SHALLOW_CRUST,
             mfd=TruncatedGRMFD(a_val=3.1, b_val=0.9, min_mag=5.0,
                                max_mag=6.5, bin_width=0.1),
             nodal_plane_distribution=PMF(
-                [(1, openquake.hazardlib.geo.NodalPlane(0.0, 90.0, 0.0))]
+                [(1, oqhazardlib.geo.NodalPlane(0.0, 90.0, 0.0))]
             ),
             hypocenter_distribution=PMF([(1, 10)]),
             upper_seismogenic_depth=0.0, lower_seismogenic_depth=10.0,
-            magnitude_scaling_relationship=openquake.hazardlib.scalerel.\
+            magnitude_scaling_relationship=oqhazardlib.scalerel.\
 PeerMSR(),
             rupture_aspect_ratio=1,
-            polygon=openquake.hazardlib.geo.Polygon(
-                [openquake.hazardlib.geo.Point(0, 0),
-                 openquake.hazardlib.geo.Point(0, 1),
-                 openquake.hazardlib.geo.Point(1, 0)]),
+            polygon=oqhazardlib.geo.Polygon(
+                [oqhazardlib.geo.Point(0, 0),
+                 oqhazardlib.geo.Point(0, 1),
+                 oqhazardlib.geo.Point(1, 0)]),
             area_discretization=10, rupture_mesh_spacing=1.0
         )
-        self.simple_fault = openquake.hazardlib.source.SimpleFaultSource(
+        self.simple_fault = oqhazardlib.source.SimpleFaultSource(
             source_id='simple_fault', name='simple fault',
-            tectonic_region_type=openquake.hazardlib.const.TRT.VOLCANIC,
+            tectonic_region_type=oqhazardlib.const.TRT.VOLCANIC,
             mfd=TruncatedGRMFD(a_val=3.1, b_val=0.9, min_mag=5.0,
                                max_mag=6.5, bin_width=0.1),
             upper_seismogenic_depth=0.0, lower_seismogenic_depth=10.0,
-            magnitude_scaling_relationship=openquake.hazardlib.scalerel.\
+            magnitude_scaling_relationship=oqhazardlib.scalerel.\
                 PeerMSR(),
             rupture_aspect_ratio=1, rupture_mesh_spacing=2.0,
-            fault_trace=openquake.hazardlib.geo.Line(
-                [openquake.hazardlib.geo.Point(0, 0),
-                 openquake.hazardlib.geo.Point(1, 1)]),
+            fault_trace=oqhazardlib.geo.Line(
+                [oqhazardlib.geo.Point(0, 0),
+                 oqhazardlib.geo.Point(1, 1)]),
             dip=45, rake=180
         )
-        self.complex_fault = openquake.hazardlib.source.ComplexFaultSource(
+        self.complex_fault = oqhazardlib.source.ComplexFaultSource(
             source_id='complex_fault', name='complex fault',
-            tectonic_region_type=openquake.hazardlib.const.TRT.VOLCANIC,
+            tectonic_region_type=oqhazardlib.const.TRT.VOLCANIC,
             mfd=TruncatedGRMFD(a_val=3.1, b_val=0.9, min_mag=5.0,
                                max_mag=6.5, bin_width=0.1),
-            magnitude_scaling_relationship=openquake.hazardlib.scalerel.\
+            magnitude_scaling_relationship=oqhazardlib.scalerel.\
                 PeerMSR(),
             rupture_aspect_ratio=1, rupture_mesh_spacing=2.0, rake=0,
-            edges=[openquake.hazardlib.geo.Line(
-                    [openquake.hazardlib.geo.Point(0, 0, 1),
-                     openquake.hazardlib.geo.Point(1, 1, 1)]),
-                   openquake.hazardlib.geo.Line(
-                    [openquake.hazardlib.geo.Point(0, 0, 2),
-                     openquake.hazardlib.geo.Point(1, 1, 2)])]
+            edges=[oqhazardlib.geo.Line(
+                    [oqhazardlib.geo.Point(0, 0, 1),
+                     oqhazardlib.geo.Point(1, 1, 1)]),
+                   oqhazardlib.geo.Line(
+                    [oqhazardlib.geo.Point(0, 0, 2),
+                     oqhazardlib.geo.Point(1, 1, 2)])]
         )
 
     def test_unknown_filter(self):
@@ -2053,8 +2053,8 @@ class LogicTreeProcessorParsePathTestCase(unittest.TestCase):
                           ('bGRRelative', 0.1)])
 
     def test_parse_gmpe_model_logictree_path(self):
-        from openquake.hazardlib.gsim.sadigh_1997 import SadighEtAl1997
-        from openquake.hazardlib.gsim.chiou_youngs_2008 import ChiouYoungs2008
+        from oqhazardlib.gsim.sadigh_1997 import SadighEtAl1997
+        from oqhazardlib.gsim.chiou_youngs_2008 import ChiouYoungs2008
         gmpes = self.proc.parse_gmpe_logictree_path(['b2', 'b3'])
         self.assertIsInstance(gmpes.pop('Active Shallow Crust'),
                               ChiouYoungs2008)

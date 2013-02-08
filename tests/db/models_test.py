@@ -23,11 +23,11 @@ import numpy
 
 from nose.plugins.attrib import attr
 
-from openquake.engine import engine
-from openquake.engine import engine2
-from openquake.engine.calculators.hazard import general as haz_general
-from openquake.engine.calculators.hazard.classical import core as cls_core
-from openquake.engine.db import models
+from oqengine import engine
+from oqengine import engine2
+from oqengine.calculators.hazard import general as haz_general
+from oqengine.calculators.hazard.classical import core as cls_core
+from oqengine.db import models
 
 from tests.utils import helpers
 from tests.db import _gmf_set_iter_test_data as gmf_set_iter_test_data
@@ -451,7 +451,7 @@ class FakeGmfSet(object):
 
 class GmfSetIterTestCase(unittest.TestCase):
     """
-    Tests for the `__iter__` of :class:`openquake.engine.db.models.GmfSet`.
+    Tests for the `__iter__` of :class:`oqengine.db.models.GmfSet`.
     """
 
     @classmethod

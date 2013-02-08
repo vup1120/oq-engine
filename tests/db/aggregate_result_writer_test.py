@@ -28,8 +28,8 @@ from __future__ import absolute_import
 
 import random
 import unittest
-from openquake.engine.db import models as oq_models
-from openquake.engine.db.aggregate_result_writer import (
+from oqengine.db import models as oq_models
+from oqengine.db.aggregate_result_writer import (
     MeanCurveWriter, QuantileCurveWriter)
 
 from ..utils import helpers

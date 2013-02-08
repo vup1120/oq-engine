@@ -31,14 +31,14 @@
 
 import unittest
 
-from openquake.engine.shapes import Curve
-from openquake.engine.shapes import Site
-from openquake.engine.output.hazard import GmfDBWriter
-from openquake.engine.output.hazard import HazardCurveDBReader
-from openquake.engine.output.hazard import HazardCurveDBWriter
-from openquake.engine.output.hazard import HazardMapDBWriter
-from openquake.engine.output.risk import LossCurveDBWriter
-from openquake.engine.output.risk import LossMapDBWriter
+from oqengine.shapes import Curve
+from oqengine.shapes import Site
+from oqengine.output.hazard import GmfDBWriter
+from oqengine.output.hazard import HazardCurveDBReader
+from oqengine.output.hazard import HazardCurveDBWriter
+from oqengine.output.hazard import HazardMapDBWriter
+from oqengine.output.risk import LossCurveDBWriter
+from oqengine.output.risk import LossMapDBWriter
 
 from tests.utils import helpers
 

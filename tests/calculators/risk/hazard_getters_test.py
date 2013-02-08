@@ -17,10 +17,10 @@
 from tests.utils import helpers
 import unittest
 
-from openquake.engine.db import models
+from oqengine.db import models
 from django.contrib.gis.geos.point import Point
 
-from openquake.engine.calculators.risk import hazard_getters
+from oqengine.calculators.risk import hazard_getters
 
 
 # helper

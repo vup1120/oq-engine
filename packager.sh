@@ -103,7 +103,7 @@ _pkgtest_innervm_run () {
     # run all demos found
     ssh $haddr "cd demos
     for ini in \$(find . -name job.ini); do
-        DJANGO_SETTINGS_MODULE=openquake.engine.settings openquake --run-hazard  \$ini --exports xml
+        DJANGO_SETTINGS_MODULE=oqengine.settings openquake --run-hazard  \$ini --exports xml
     done"
 
     trap ERR

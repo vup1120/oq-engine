@@ -16,7 +16,7 @@
 
 import unittest
 
-from openquake.engine.calculators.hazard.scenario.core import (
+from oqengine.calculators.hazard.scenario.core import (
     gmf_realiz_per_task)
 
 

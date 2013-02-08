@@ -23,8 +23,8 @@ from django.db import transaction
 from django.db.utils import DatabaseError
 from django.test import TestCase as DjangoTestCase
 
-from openquake.engine import shapes
-from openquake.engine.db import models
+from oqengine import shapes
+from oqengine.db import models
 
 from tests.utils import helpers
 

@@ -20,7 +20,7 @@ from nose.plugins.attrib import attr
 from qa_tests import risk
 from tests.utils import helpers
 
-from openquake.engine.db import models
+from oqengine.db import models
 
 
 class ClassicalBCRCase1TestCase(risk.BaseRiskQATestCase):

@@ -22,8 +22,8 @@ import kombu
 import kombu.entity
 import kombu.messaging
 
-from openquake.engine.utils import config
-from openquake.engine import signalling
+from oqengine.utils import config
+from oqengine import signalling
 
 
 class AMQPMessageConsumerTestCase(unittest.TestCase):

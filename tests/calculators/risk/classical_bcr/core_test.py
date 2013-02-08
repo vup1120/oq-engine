@@ -16,8 +16,8 @@
 from tests.calculators.risk import general_test
 from tests.utils import helpers
 
-from openquake.engine.db import models
-from openquake.engine.calculators.risk.classical_bcr import (
+from oqengine.db import models
+from oqengine.calculators.risk.classical_bcr import (
     core as classical_bcr)
 
 
@@ -64,7 +64,7 @@ class ClassicalBCRRiskCalculatorTestCase(
     def test_hazard_id(self):
         """
         Test that the hazard output used by the calculator is a
-        `openquake.engine.db.models.HazardCurve` object
+        `oqengine.db.models.HazardCurve` object
         """
         self.calculator.imt = 'PGA'
         outputs = self.calculator.hazard_outputs(

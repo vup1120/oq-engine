@@ -5,35 +5,35 @@ Hazard Calculators
 *******
 General
 *******
-.. automodule:: openquake.engine.calculators.hazard.general
+.. automodule:: oqengine.calculators.hazard.general
 
 *************************
 Classical PSHA Calculator
 *************************
-.. automodule:: openquake.engine.calculators.hazard.classical.__init__
+.. automodule:: oqengine.calculators.hazard.classical.__init__
 
 Classical PSHA Core
 ===================
-.. automodule:: openquake.engine.calculators.hazard.classical.core
+.. automodule:: oqengine.calculators.hazard.classical.core
 
 Classical PSHA Post-Processing
 ==============================
-.. automodule:: openquake.engine.calculators.hazard.classical.post_processing
-.. autofunction:: openquake.engine.calculators.hazard.classical.post_processing.hazard_curves_to_hazard_map_task
-.. autofunction:: openquake.engine.calculators.hazard.classical.post_processing.do_post_process
+.. automodule:: oqengine.calculators.hazard.classical.post_processing
+.. autofunction:: oqengine.calculators.hazard.classical.post_processing.hazard_curves_to_hazard_map_task
+.. autofunction:: oqengine.calculators.hazard.classical.post_processing.do_post_process
 
 ***************************
 Event-Based PSHA Calculator
 ***************************
-.. automodule:: openquake.engine.calculators.hazard.event_based.__init__
+.. automodule:: oqengine.calculators.hazard.event_based.__init__
 
 Event-Based Core
 ================
-.. automodule:: openquake.engine.calculators.hazard.event_based.core_next
+.. automodule:: oqengine.calculators.hazard.event_based.core_next
 
 Event-Based Post-Proccessing
 ============================
-.. automodule:: openquake.engine.calculators.hazard.event_based.post_processing
+.. automodule:: oqengine.calculators.hazard.event_based.post_processing
 
 *******************
 Scenario Calculator

@@ -17,7 +17,7 @@ import numpy
 import os
 
 from nose.plugins.attrib import attr
-from openquake.engine.db import models
+from oqengine.db import models
 from qa_tests import _utils as qa_utils
 
 

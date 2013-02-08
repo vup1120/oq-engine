@@ -23,9 +23,9 @@ import unittest
 
 from django.core import exceptions
 
-from openquake.engine import engine2
-from openquake.engine.db import models
-from openquake.engine.job import validation
+from oqengine import engine2
+from oqengine.db import models
+from oqengine.job import validation
 
 from tests.utils import helpers
 
