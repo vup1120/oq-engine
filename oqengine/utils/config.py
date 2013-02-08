@@ -29,7 +29,7 @@ import sys
 import oqengine
 from oqengine.utils import general
 
-OQDIR = os.path.dirname(os.path.dirname(oqengine.__path__[0]))
+OQDIR = os.path.dirname(oqengine.__path__[0])
 
 @general.singleton
 class Config(object):
