@@ -741,7 +741,7 @@ def get_fake_risk_job(risk_cfg, hazard_cfg, output_type="curve",
                       "POINT(15.481 38.25)"]:
             models.GmfAgg.objects.create(
                 gmf_collection=hazard_output,
-                imt="PGA",
+                imt=models.IMT.objects.get(imt_str="PGA"),
                 gmvs=[0.1, 0.2, 0.3],
                 rupture_ids=rupture_ids,
                 location=point)

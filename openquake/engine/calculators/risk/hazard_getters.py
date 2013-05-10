@@ -252,17 +252,10 @@ class GroundMotionValuesGetter(HazardGetter):
     def container(self, hazard_output):
         return hazard_output.gmfcollection
 
-    #@profile
     def get_data(self, imt):
+        imt_id = models.IMT.objects.get(imt_str=imt).id
+
         cursor = getcursor('job_init')
-
-        imt_type, sa_period, sa_damping = models.parse_imt(imt)
-        spectral_filters = ""
-        args = (imt_type, self.hazard_id)
-
-        if imt_type == "SA":
-            spectral_filters = "AND sa_period = %s AND sa_damping = %s"
-            args += (sa_period, sa_damping)
 
         # Query explanation. We need to get for each asset the closest
         # ground motion values (and the corresponding rupture ids from
@@ -283,17 +276,17 @@ class GroundMotionValuesGetter(HazardGetter):
   FROM riski.exposure_data JOIN hzrdr.gmf_agg AS gmf_table
   ON ST_DWithin(riski.exposure_data.site, gmf_table.location, %s)
   WHERE taxonomy = %s AND exposure_model_id = %s AND
-        riski.exposure_data.site && %s AND imt = %s AND
-        gmf_collection_id = %s {}
+        riski.exposure_data.site && %s AND imt_id = %s AND
+        gmf_collection_id = %s
   ORDER BY riski.exposure_data.id,
            ST_Distance(riski.exposure_data.site, gmf_table.location, false)
-           """.format(spectral_filters)  # this will fill in the {}
+           """
 
         assets_extent = self._assets_mesh.get_convex_hull()
         args = (self.max_distance * KILOMETERS_TO_METERS,
                 self.assets[0].taxonomy,
                 self.assets[0].exposure_model_id,
-                assets_extent.wkt) + args
+                assets_extent.wkt, imt_id, self.hazard_id)
 
         cursor.execute(query, args)
         # print cursor.mogrify(query, args)

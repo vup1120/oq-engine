@@ -591,6 +591,32 @@ CREATE TABLE hzrdr.ses_rupture (
     rupture_ordinal INTEGER NOT NULL
 ) TABLESPACE hzrdr_ts;
 
+-- an intensity measure type
+CREATE TABLE hzrdi.imt(
+  id SERIAL PRIMARY KEY,
+  imt_str VARCHAR UNIQUE NOT NULL -- full string representation of the IMT
+    CHECK(imt_str = CASE WHEN imt = 'SA' THEN 'SA(' || sa_period::TEXT || ')'
+        ELSE imt END),
+  imt VARCHAR NOT NULL, -- short string for the IMT
+  sa_period float CONSTRAINT imt_sa_period
+        CHECK(((imt = 'SA') AND (sa_period IS NOT NULL))
+              OR ((imt != 'SA') AND (sa_period IS NULL))),
+  sa_damping float CONSTRAINT imt_sa_damping
+        CHECK(((imt = 'SA') AND (sa_damping IS NOT NULL))
+            OR ((imt != 'SA') AND (sa_damping IS NULL))),
+  UNIQUE (imt, sa_period, sa_damping)
+) TABLESPACE hzrdr_ts;
+
+-- predefined intensity measure types
+INSERT INTO hzrdi.imt (imt_str, imt, sa_period, sa_damping) VALUES
+('PGA', 'PGA', NULL, NULL),
+('PGV', 'PGV', NULL, NULL),
+('PGD', 'PGD', NULL, NULL),
+('IA', 'IA', NULL, NULL),
+('RSD', 'RSD', NULL, NULL),
+('MMI', 'MMI', NULL, NULL),
+('SA(0.1)', 'SA', 0.1, 5.0);
+
 
 CREATE TABLE hzrdr.gmf_collection (
     id SERIAL PRIMARY KEY,
@@ -644,21 +670,9 @@ CREATE TABLE hzrdr.gmf_agg (
     id SERIAL PRIMARY KEY,
     gmf_collection_id INTEGER NOT NULL REFERENCES hzrdr.gmf_collection(id)
     ON DELETE CASCADE,
-    imt VARCHAR NOT NULL,
-        --CONSTRAINT hazard_curve_imt
-        --CHECK(imt in ('PGA', 'PGV', 'PGD', 'SA', 'IA', 'RSD', 'MMI')),
-    sa_period float,
-        -- CONSTRAINT gmf_sa_period
-        --CHECK(
-        --    ((imt = 'SA') AND (sa_period IS NOT NULL))
-        --    OR ((imt != 'SA') AND (sa_period IS NULL))),
-    sa_damping float,
-        --CONSTRAINT gmf_sa_damping
-        --CHECK(
-        --    ((imt = 'SA') AND (sa_damping IS NOT NULL))
-        --    OR ((imt != 'SA') AND (sa_damping IS NULL))),
-    gmvs float[],
-    rupture_ids int[],
+    imt_id INTEGER NOT NULL,   -- FK to imt.id
+    gmvs FLOAT[],
+    rupture_ids INTEGER[],
     location GEOGRAPHY(point) NOT NULL
 ) TABLESPACE hzrdr_ts;
 
@@ -1267,6 +1281,12 @@ ON DELETE CASCADE;
 ALTER TABLE hzrdr.gmf
 ADD CONSTRAINT hzrdr_gmf_gmf_set_fk
 FOREIGN KEY (gmf_set_id) REFERENCES hzrdr.gmf_set(id)
+ON DELETE CASCADE;
+
+-- gmf_agg -> imt FK
+ALTER TABLE hzrdr.gmf_agg
+ADD CONSTRAINT hzrdr_gmf_agg_imt_fk
+FOREIGN KEY (imt_id) REFERENCES hzrdi.imt(id)
 ON DELETE CASCADE;
 
 -- gmf_scenario -> output FK

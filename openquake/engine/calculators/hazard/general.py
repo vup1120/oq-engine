@@ -30,7 +30,6 @@ import numpy
 
 from django.db import transaction, connections
 from django.db.models import Sum
-from django.core.exceptions import ObjectDoesNotExist
 from shapely import geometry
 
 from openquake.hazardlib import correlation
@@ -676,13 +675,12 @@ class BaseHazardCalculator(base.Calculator):
             for input_type in queryset:
                 content = StringIO.StringIO(
                     input_type.model_content.raw_content_ascii)
-                intensity_measure_types_and_levels = dict([
+                records = list(parsers.VulnerabilityModelParser(content))
+                intensity_measure_types_and_levels = dict(
                     (record['IMT'], record['IML'])
-                    for record in parsers.VulnerabilityModelParser(content)])
-                intensity_measure_types = list(set(
-                    record['IMT']
-                    for record in parsers.VulnerabilityModelParser(content)))
-
+                    for record in records)
+                intensity_measure_types = set(
+                    record['IMT'] for record in records)
                 hc.intensity_measure_types_and_levels.update(
                     intensity_measure_types_and_levels)
                 hc.intensity_measure_types.extend(intensity_measure_types)
@@ -698,7 +696,7 @@ class BaseHazardCalculator(base.Calculator):
             fragility_format, _limit_states = parser.next()
 
             if (fragility_format == "continuous" and
-                hc.calculation_mode != "scenario"):
+                    hc.calculation_mode != "scenario"):
                 raise NotImplementedError(
                     "Getting IMT and levels from "
                     "a continuous fragility model is not yet supported")
@@ -719,6 +717,11 @@ class BaseHazardCalculator(base.Calculator):
                 exposure.ExposureDBWriter(
                     exposure_model_input).serialize(
                         parsers.ExposureModelParser(content))
+
+        # make sure the IMT table is updated
+        if self.hc.intensity_measure_types:
+            for imt_str in self.hc.intensity_measure_types:
+                models.IMT.add_if_new(imt_str)
 
     def initialize_site_model(self):
         """

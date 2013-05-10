@@ -292,3 +292,19 @@ spectral acceleration (SA), the period is encoded in the name, like so:
 `lons` and `lats` represent the sites of interest for a given calculation.
 The ordering is EXTREMELY important, because the indices of each location
 correspond to a position in the `htemp.hazard_curve_progress.result_matrix`.';
+
+
+-- helper function, to be used with the table gmf
+CREATE OR REPLACE FUNCTION hzrdr.get_imt_id(
+    imt VARCHAR,
+    sa_period FLOAT,
+    sa_damping FLOAT
+) RETURNS INTEGER
+AS $$
+SELECT CASE WHEN $1 = 'SA' THEN 
+       (SELECT id FROM hzrdi.imt
+        WHERE imt=$1 AND sa_period=$2 AND sa_damping=$3)
+       ELSE
+       (SELECT id FROM hzrdi.imt WHERE imt=$1)
+       END;
+$$ LANGUAGE SQL IMMUTABLE;

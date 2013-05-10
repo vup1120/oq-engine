@@ -1740,6 +1740,28 @@ class SESRupture(djm.Model):
         return None
 
 
+class IMT(djm.Model):
+    """
+    An Intensity Measure Type
+    """
+    imt_str = djm.TextField(null=False)
+    imt = djm.TextField(choices=IMT_CHOICES, null=False)
+    sa_period = djm.FloatField(null=True)
+    sa_damping = djm.FloatField(null=True)
+
+    @classmethod
+    def add_if_new(cls, imt_str):
+        """Add an IMT if it is not already present"""
+        if not cls.objects.filter(imt_str=imt_str):
+            imt, sa_period, sa_damping = parse_imt(imt_str)
+            return cls.objects.create(
+                imt_str=imt_str, imt=imt,
+                sa_period=sa_period, sa_damping=sa_damping)
+
+    class Meta:
+        db_table = 'hzrdi\".\"imt'
+
+
 class GmfCollection(djm.Model):
     """
     A collection of ground motion field (GMF) sets for a given logic tree
@@ -1947,9 +1969,7 @@ class GmfAgg(djm.Model):
     respective geographical locations.
     """
     gmf_collection = djm.ForeignKey('GmfCollection')
-    imt = djm.TextField(choices=IMT_CHOICES)
-    sa_period = djm.FloatField(null=True)
-    sa_damping = djm.FloatField(null=True)
+    imt = djm.ForeignKey('IMT')
     location = djm.PointField(srid=DEFAULT_SRID)
     gmvs = fields.FloatArrayField()
     rupture_ids = fields.IntArrayField()

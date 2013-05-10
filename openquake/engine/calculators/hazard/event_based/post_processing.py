@@ -63,13 +63,11 @@ def gmf_post_process_arg_gen(job):
     * job ID
     * point geometry
     * logic tree realization ID
-    * IMT
+    * IMT ID
     * IMLs
     * hazard curve "collection" ID
     * investigation time
     * duration
-    * SA period
-    * SA damping
 
     See :func:`gmf_to_hazard_curve_task` for more information about these
     arguments.
@@ -91,7 +89,7 @@ def gmf_post_process_arg_gen(job):
     duration = hc.ses_per_logic_tree_path * invest_time
 
     for raw_imt, imls in hc.intensity_measure_types_and_levels.iteritems():
-        imt, sa_period, sa_damping = models.parse_imt(raw_imt)
+        imt = models.IMT.objects.get(imt_str=raw_imt)
 
         for lt_rlz in lt_realizations:
             hc_output = models.Output.objects.create_output(
@@ -104,22 +102,21 @@ def gmf_post_process_arg_gen(job):
                 output=hc_output,
                 lt_realization=lt_rlz,
                 investigation_time=invest_time,
-                imt=imt,
+                imt=imt.imt,
                 imls=imls,
-                sa_period=sa_period,
-                sa_damping=sa_damping)
+                sa_period=imt.sa_period,
+                sa_damping=imt.sa_damping)
 
             for point in points:
-                yield (job.id, point, lt_rlz.id, imt, imls, hc_coll.id,
-                       invest_time, duration, sa_period, sa_damping)
+                yield (job.id, point, lt_rlz.id, imt.id, imls, hc_coll.id,
+                       invest_time, duration)
 
 
 # Disabling "Unused argument 'job_id'" (this parameter is required by @oqtask):
 # pylint: disable=W0613
 @tasks.oqtask
-def gmf_to_hazard_curve_task(job_id, point, lt_rlz_id, imt, imls, hc_coll_id,
-                             invest_time, duration, sa_period=None,
-                             sa_damping=None):
+def gmf_to_hazard_curve_task(job_id, point, lt_rlz_id, imt_id, imls,
+                             hc_coll_id, invest_time, duration):
     """
     For a given job, point, realization, and IMT, compute a hazard curve and
     save it to the database. The hazard curve will be computed from all
@@ -132,8 +129,8 @@ def gmf_to_hazard_curve_task(job_id, point, lt_rlz_id, imt, imls, hc_coll_id,
     :param int lt_rlz_id:
         ID of a :class:`openquake.engine.db.models.LtRealization` for the
         current calculation.
-    :param str imt:
-        Intensity Measure Type (PGA, SA, PGV, etc.)
+    :param int imt_id:
+        ID of an Intensity Measure Type
     :param imls:
         List of Intensity Measure Levels. These will serve as the abscissae for
         the computed hazard curve.
@@ -154,17 +151,12 @@ def gmf_to_hazard_curve_task(job_id, point, lt_rlz_id, imt, imls, hc_coll_id,
 
         NOTE: Duration is computed as the calculation investigation time
         multiplied by the number of stochastic event sets.
-    :param float sa_period:
-        Spectral Acceleration period. Used only with ``imt`` of 'SA'.
-    :param float sa_damping:
-        Spectral Acceleration damping. Used only with ``imt`` of 'SA'.
+
     """
     lt_rlz = models.LtRealization.objects.get(id=lt_rlz_id)
     gmfs = models.GmfAgg.objects.filter(
         gmf_collection__lt_realization=lt_rlz_id,
-        imt=imt,
-        sa_period=sa_period,
-        sa_damping=sa_damping).extra(where=[
+        imt__id=imt_id).extra(where=[
             "location::geometry ~= 'SRID=4326;%s'::geometry" % point.wkt2d])
     gmvs = list(itertools.chain(*(g.gmvs for g in gmfs)))
 
@@ -192,16 +184,17 @@ def insert_into_gmf_agg(_job_id, rlz, chunk_id, nchunks):
     # IMPORTANT: in PostGIS 1.5 GROUP BY location does not work properly
     # if location is of geography type, hence the need to cast it to geometry
     insert_query = '''-- running
-    INSERT INTO hzrdr.gmf_agg (gmf_collection_id, imt, sa_damping, sa_period,
-                               location, gmvs, rupture_ids)
-    SELECT gmf_collection_id, imt, sa_damping, sa_period, location::geometry,
-       array_concat(gmvs ORDER BY gmf_set_id, result_grp_ordinal),
-       array_concat(rupture_ids ORDER BY gmf_set_id, result_grp_ordinal)
+    INSERT INTO hzrdr.gmf_agg
+           (gmf_collection_id, imt_id, location, gmvs, rupture_ids)
+    SELECT gmf_collection_id,
+           hzrdr.get_imt_id(imt, sa_period, sa_damping),
+           location::geometry,
+           array_concat(gmvs ORDER BY gmf_set_id, result_grp_ordinal),
+          array_concat(rupture_ids ORDER BY gmf_set_id, result_grp_ordinal)
     FROM hzrdr.gmf AS a, hzrdr.gmf_set AS b
     WHERE a.gmf_set_id=b.id AND gmf_collection_id={} AND a.id % {} = {}
     GROUP BY gmf_collection_id, imt, sa_damping, sa_period, location::geometry;
     '''.format(coll.id, nchunks, chunk_id)
-
     curs = db.connections['reslt_writer'].cursor()
     with db.transaction.commit_on_success(using='reslt_writer'):
         curs.execute(insert_query)

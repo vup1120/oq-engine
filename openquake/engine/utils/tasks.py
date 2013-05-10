@@ -19,7 +19,6 @@
 
 """Utility functions related to splitting work into tasks."""
 
-import itertools
 from functools import wraps
 
 from celery.task.sets import TaskSet
@@ -59,6 +58,7 @@ def _map_reduce(task_func, task_args, agg, acc):
     if no_distribute():
         for the_args in task_args:
             acc = agg(acc, task_func(*the_args))
+            # acc = agg(acc, task_func.__wrapped__(*the_args))
     else:
         taskset = TaskSet(tasks=map(task_func.subtask, task_args))
         for result in taskset.apply_async():
@@ -181,4 +181,6 @@ def oqtask(task_func):
         finally:
             EnginePerformanceMonitor.cache.flush()  # flush performance data
     celery_queue = config.get('amqp', 'celery_queue')
-    return task(wrapped, ignore_result=True, queue=celery_queue)
+    tsk = task(wrapped, ignore_result=True, queue=celery_queue)
+    tsk.__wrapped__ = task_func
+    return tsk
