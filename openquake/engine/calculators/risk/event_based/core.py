@@ -487,6 +487,7 @@ class EventBasedRiskCalculator(base.RiskCalculator):
         risk_model = self.risk_models[taxonomy][loss_type]
 
         time_span, tses = self.hazard_times()
+        # there is a gmfcollection output for each realization
         return [base.CalculationUnit(
             api.ProbabilisticEventBased(
                 risk_model.vulnerability_function,
@@ -499,8 +500,8 @@ class EventBasedRiskCalculator(base.RiskCalculator):
                 ho,
                 assets,
                 self.rc.best_maximum_distance,
-                risk_model.imt))
-                for ho in self.rc.hazard_outputs()]
+                risk_model.imt)
+        ) for ho in self.rc.hazard_outputs()]
 
     def hazard_times(self):
         """

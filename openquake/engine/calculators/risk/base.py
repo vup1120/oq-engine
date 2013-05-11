@@ -21,7 +21,7 @@ import collections
 import StringIO
 
 from django.core.exceptions import ObjectDoesNotExist
-
+from django import db
 from openquake.risklib import scientific
 from openquake.nrmllib.risk import parsers
 
@@ -29,7 +29,7 @@ from openquake.engine import logs, export
 from openquake.engine.utils import config, stats
 from openquake.engine.db import models
 from openquake.engine.calculators import base, post_processing
-from openquake.engine.calculators.risk import writers
+from openquake.engine.calculators.risk import writers, hazard_getters
 from openquake.engine.input.exposure import ExposureDBWriter
 
 
@@ -79,8 +79,74 @@ class RiskCalculator(base.Calculator):
             self.check_taxonomies(self.risk_models)
             self.check_imts(required_imts(self.risk_models))
 
+        gmfcollections = []
+        for ho in self.rc.hazard_outputs():
+            try:
+                coll = ho.gmfcollection
+            except ObjectDoesNotExist:
+                continue
+            gmfcollections.append(coll)
+        if gmfcollections:
+            self.associate_asset_ground_motion(
+                coll.id for coll in gmfcollections)
+
         assets_num = sum(self.taxonomies.values())
         self._initialize_progress(assets_num)
+
+    def associate_asset_ground_motion(self, gmf_collection_ids):
+        """
+        Create a temporary table with fields (loss_type, retrofitted,
+        imt_id, gmf_collection_id, asset_id, gmf_id) which associate
+        to each asset its closest ground motion, by taking in account
+        the taxonomy-IMT associations in the risk model.
+        """
+        params = dict(
+            job_id=self.job.id,
+            max_dist=self.rc.best_maximum_distance *
+            hazard_getters.KILOMETERS_TO_METERS,
+            exp_model_id=self.rc.exposure_model.id,
+            gmf_collection_ids='(%s)' % ','.join(map(str, gmf_collection_ids))
+        )
+        curs = hazard_getters.getcursor('job_init')
+        megaquery = '''\
+  SELECT DISTINCT ON (
+     htemp.taxonomy_imt.loss_type,
+     htemp.taxonomy_imt.retrofitted,
+     htemp.taxonomy_imt.id,
+     hzrdr.gmf_agg.gmf_collection_id,
+     riski.exposure_data.id
+     )
+     htemp.taxonomy_imt.loss_type,
+     htemp.taxonomy_imt.retrofitted,
+     htemp.taxonomy_imt.id AS imt_id,
+     hzrdr.gmf_agg.gmf_collection_id,
+     riski.exposure_data.id AS asset_id,
+     hzrdr.gmf_agg.id AS gmf_id
+  INTO rtemp.asset_gmf_{job_id}
+  FROM riski.exposure_data
+  INNER JOIN hzrdr.gmf_agg
+  ON ST_DWithin(riski.exposure_data.site, gmf_agg.location, {max_dist})
+  INNER JOIN htemp.taxonomy_imt
+  ON htemp.taxonomy_imt.imt_id=gmf_agg.imt_id
+  WHERE htemp.taxonomy_imt.taxonomy=riski.exposure_data.taxonomy
+  AND htemp.taxonomy_imt.oq_job_id = {job_id}
+  AND riski.exposure_data.exposure_model_id={exp_model_id}
+  AND hzrdr.gmf_agg.gmf_collection_id IN {gmf_collection_ids}
+  ORDER BY htemp.taxonomy_imt.loss_type,
+           htemp.taxonomy_imt.retrofitted,
+           htemp.taxonomy_imt.id,
+           hzrdr.gmf_agg.gmf_collection_id,
+           riski.exposure_data.id,
+           ST_Distance(riski.exposure_data.site, gmf_agg.location, false);
+        '''.format(**params)
+        logs.LOG.debug(megaquery)
+        with db.transaction.commit_on_success(using='job_init'):
+            curs.execute(megaquery)
+
+    def cleanup(self):
+        """Drop the temporary table"""
+        curs = hazard_getters.getcursor('job_init')
+        curs.execute('DROP TABLE rtemp.asset_gmf_%d' % self.job.id)
 
     def validate_hazard(self):
         """
@@ -319,8 +385,15 @@ class RiskCalculator(base.Calculator):
 
         for loss_type in models.LOSS_TYPES:
             vfs = self.get_vulnerability_model(loss_type, retrofitted)
+            # populate the risk_models and the taxonomy_imt table
             for taxonomy, model in vfs.items():
                 risk_models[taxonomy][loss_type] = model
+                models.TaxonomyIMT.objects.create(
+                    oq_job=self.job,
+                    loss_type=loss_type,
+                    taxonomy=taxonomy,
+                    imt=models.IMT.objects.get(imt_str=model.imt),
+                    retrofitted=retrofitted)
 
             if vfs:
                 field_kwarg = dict(
@@ -339,8 +412,8 @@ class RiskCalculator(base.Calculator):
                     non_structural=["non_stco_type", "non_stco_unit"],
                     contents=["coco_type", "coco_unit"])
                 if loss_type in fields:
-                    if any([not getattr(self.rc.exposure_model, field, False)
-                            for field in fields[loss_type]]):
+                    if any(not getattr(self.rc.exposure_model, field, False)
+                           for field in fields[loss_type]):
                         raise ValueError("Invalid exposure model "
                                          "for type %s. %s are required" % (
                                              loss_type, fields[loss_type]))
@@ -730,7 +803,7 @@ def required_imts(risk_models):
     :returns: a set with all the required imts
     """
     risk_models = sum([d.values() for d in risk_models.values()], [])
-    return set([m.imt for m in risk_models])
+    return set(m.imt for m in risk_models)
 
 
 def loss_types(risk_models):

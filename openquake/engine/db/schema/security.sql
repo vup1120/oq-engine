@@ -60,6 +60,10 @@ GRANT INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA riski TO oq_admin;
 GRANT INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA riskr TO oq_admin;
 GRANT INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA uiapi TO oq_admin;
 
+-- rtemp is a schema for temporary risk tables
+GRANT CREATE ON SCHEMA rtemp TO GROUP oq_job_init;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA rtemp TO GROUP oq_job_init;
+
 ----------------------------------------------
 -- Specific permissions for individual tables:
 ----------------------------------------------
@@ -71,6 +75,7 @@ GRANT SELECT,INSERT,UPDATE ON admin.organization TO oq_admin;
 GRANT SELECT,INSERT,DELETE        ON htemp.site_data             TO oq_reslt_writer;
 GRANT SELECT,INSERT,UPDATE,DELETE ON htemp.source_progress       TO oq_reslt_writer;
 GRANT SELECT,INSERT,UPDATE,DELETE ON htemp.hazard_curve_progress TO oq_reslt_writer;
+GRANT SELECT,INSERT,UPDATE,DELETE ON htemp.taxonomy_imt TO oq_reslt_writer;
 
 -- hzrdi schema
 GRANT SELECT,INSERT ON hzrdi.parsed_source        TO oq_job_init;

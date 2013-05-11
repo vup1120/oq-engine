@@ -1139,6 +1139,19 @@ CREATE TABLE htemp.site_data (
 ) TABLESPACE htemp_ts;
 
 
+-- keep track of taxonomy-imt associations per loss type
+CREATE TABLE htemp.taxonomy_imt (
+    id SERIAL PRIMARY KEY,
+    oq_job_id INTEGER NOT NULL, -- FK to oq_job
+    loss_type VARCHAR NOT NULL CONSTRAINT loss_type
+       CHECK(loss_type IN ('structural', 'non_structural',
+                           'contents', 'occupancy')),    
+    taxonomy VARCHAR NOT NULL,
+    imt_id INTEGER NOT NULL, -- FK to imt
+    retrofitted BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE (oq_job_id, loss_type, taxonomy, imt_id, retrofitted)
+) TABLESPACE htemp_ts;
+
 ------------------------------------------------------------------------
 -- Constraints (foreign keys etc.) go here
 ------------------------------------------------------------------------
@@ -1462,6 +1475,18 @@ ALTER TABLE htemp.site_data
 ADD CONSTRAINT htemp_site_data_hazard_calculation_fk
 FOREIGN KEY (hazard_calculation_id)
 REFERENCES uiapi.hazard_calculation(id)
+ON DELETE CASCADE;
+
+-- taxonomy_imt -> imt FK
+ALTER TABLE htemp.taxonomy_imt
+ADD CONSTRAINT htemp_taxonomy_imt_fk
+FOREIGN KEY (imt_id) REFERENCES hzrdi.imt(id)
+ON DELETE CASCADE;
+
+-- taxonomy_imt -> oq_job FK
+ALTER TABLE htemp.taxonomy_imt
+ADD CONSTRAINT htemp_taxonomy_oq_job_fk
+FOREIGN KEY (oq_job_id) REFERENCES uiapi.oq_job(id)
 ON DELETE CASCADE;
 
 ---------------------- views ----------------------------

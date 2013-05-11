@@ -2546,7 +2546,7 @@ class DmgDistPerTaxonomy(djm.Model):
     """Holds the actual data for damage distributions per taxonomy."""
 
     dmg_state = djm.ForeignKey("DmgState")
-    taxonomy = djm.TextField()
+    taxonomy = djm.TextField(null=False, blank=False)
     mean = djm.FloatField()
     stddev = djm.FloatField()
 
@@ -2674,7 +2674,7 @@ class AssetManager(djm.GeoManager):
             ORDER BY ST_X(geometry(site)), ST_Y(geometry(site))
             LIMIT %s OFFSET %s
             """.format(occupants=occupants, occupants_cond=occupants_cond),
-            args))
+                     args))
 
     def taxonomies_contained_in(self, exposure_model_id, region_constraint):
         """
@@ -2705,7 +2705,7 @@ class ExposureData(djm.Model):
 
     exposure_model = djm.ForeignKey("ExposureModel")
     asset_ref = djm.TextField()
-    taxonomy = djm.TextField()
+    taxonomy = djm.TextField(blank=False)
     site = djm.PointField(geography=True)
     # Override the default manager with a GeoManager instance in order to
     # enable spatial queries.
@@ -2870,3 +2870,18 @@ class SiteData(djm.Model):
 
     class Meta:
         db_table = 'htemp\".\"site_data'
+
+
+class TaxonomyIMT(djm.Model):
+    """
+    Contains the association taxonomy <-> imt for each loss type
+    for a given job.
+    """
+    oq_job = djm.ForeignKey('OqJob')
+    loss_type = djm.TextField(choices=zip(LOSS_TYPES, LOSS_TYPES))
+    taxonomy = djm.TextField(null=False, blank=False)
+    imt = djm.ForeignKey('IMT')
+    retrofitted = djm.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'htemp\".\"taxonomy_imt'

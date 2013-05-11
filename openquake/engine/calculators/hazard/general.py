@@ -701,9 +701,9 @@ class BaseHazardCalculator(base.Calculator):
                     "Getting IMT and levels from "
                     "a continuous fragility model is not yet supported")
 
-            hc.intensity_measure_types_and_levels = dict([
+            hc.intensity_measure_types_and_levels = dict(
                 (iml['IMT'], iml['imls'])
-                for _taxonomy, iml, _params, _no_damage_limit in parser])
+                for _taxonomy, iml, _params, _no_damage_limit in parser)
             hc.intensity_measure_types = (
                 hc.intensity_measure_types_and_levels.keys())
             hc.save()

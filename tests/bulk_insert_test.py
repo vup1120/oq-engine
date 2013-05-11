@@ -23,7 +23,7 @@ from django.db import transaction
 
 from openquake.engine import writer
 
-from openquake.engine.db.models import OqUser, GmfData, GmfAgg
+from openquake.engine.db.models import OqUser, GmfData, GmfAgg, IMT
 from openquake.engine.writer import BulkInserter, CacheInserter
 
 
@@ -47,7 +47,8 @@ class DummyConnection(object):
         self.data = stringio.getvalue()
         self.table = table
         self.columns = columns
-        
+
+
 class BulkInserterTestCase(unittest.TestCase):
     """
     Unit tests for the BulkInserter class, which simplifies database
@@ -112,18 +113,18 @@ class BulkInserterTestCase(unittest.TestCase):
         fields = inserter.fields
         inserter.flush()
 
-        self.assertEquals('INSERT INTO "admin"."oq_user" (%s) VALUES' \
-                              ' (%%s, %%s)' %
-                          (", ".join(fields)), connection.sql)
+        self.assertEquals(
+            'INSERT INTO "admin"."oq_user" (%s) VALUES'
+            ' (%%s, %%s)' % (", ".join(fields)), connection.sql)
 
         inserter.add_entry(user_name='user1', full_name='An user')
         inserter.add_entry(user_name='user2', full_name='Another user')
         fields = inserter.fields
         inserter.flush()
 
-        self.assertEquals('INSERT INTO "admin"."oq_user" (%s) VALUES' \
-                              ' (%%s, %%s), (%%s, %%s)' %
-                          (", ".join(fields)), connection.sql)
+        self.assertEquals(
+            'INSERT INTO "admin"."oq_user" (%s) VALUES'
+            ' (%%s, %%s), (%%s, %%s)' % (", ".join(fields)), connection.sql)
 
     @transaction.commit_on_success('reslt_writer')
     def test_flush_geometry(self):
@@ -154,23 +155,23 @@ class CacheInserterTestCase(unittest.TestCase):
 
     def tearDown(self):
         writer.connections = self.connections
-    
+
     # this test is probably too strict and testing implementation details
     def test_insert_gmf(self):
         cache = CacheInserter(10)
+        pga = IMT.objects.get(imt_str='PGA')
         gmf1 = GmfAgg(
-            gmf_collection_id=1, imt='PGA', gmvs=[], rupture_ids=[],
+            gmf_collection_id=1, imt=pga, gmvs=[], rupture_ids=[],
             location='POINT(-122.5000 37.5000)')
         gmf2 = GmfAgg(
-            gmf_collection_id=1, imt='PGA', gmvs=[], rupture_ids=[],
+            gmf_collection_id=1, imt=pga, gmvs=[], rupture_ids=[],
             location='POINT(-121.5000 37.5000)')
         cache.add(gmf1)
         cache.add(gmf2)
         cache.flush()
         connection = writer.connections['reslt_writer']
-        self.assertEqual(connection.data, '1	PGA	\N	\N	POINT (-122.5000000000000000 37.5000000000000000)	{}	{}')
+        self.assertEqual(connection.data, '1\t1\tPOINT (-122.5000000000000000 37.5000000000000000)\t{}\t{}')
         self.assertEqual(connection.table, '"hzrdr"."gmf_agg"')
         self.assertEqual(
             connection.columns,
-            ['gmf_collection_id', 'imt', 'sa_period', 'sa_damping',
-             'location', 'gmvs', 'rupture_ids'])
+            ['gmf_collection_id', 'imt_id', 'location', 'gmvs', 'rupture_ids'])
