@@ -37,6 +37,20 @@ class PerformanceMonitor(object):
     or store the results of the analysis.
     """
 
+    @classmethod
+    def monitor(cls, method):
+        """
+        A decorator to add monitoring to calculator methods. The only
+        constraints are:
+        1) the method has no arguments except self
+        2) there is an attribute self.job.id
+        """
+        def newmeth(self):
+            with cls(method.__name__, self.job.id):
+                return method(self)
+        newmeth.__name__ = method.__name__
+        return newmeth
+
     def __init__(self, pids):
         self._procs = [psutil.Process(pid) for pid in pids if pid]
         self._start_time = None  # seconds from the epoch
@@ -191,7 +205,7 @@ class EnginePerformanceMonitor(PerformanceMonitor):
 atexit.register(EnginePerformanceMonitor.cache.flush)
 
 
-class DummyMonitor(object):
+class DummyMonitor(PerformanceMonitor):
     """
     This class makes it easy to disable the monitoring
     in client code. Disabling the monitor can improve the performance.
@@ -199,6 +213,10 @@ class DummyMonitor(object):
     def __init__(self, operation='', job_id=0, *args, **kw):
         self.operation = operation
         self.job_id = job_id
+        self._procs = []
+
+    def copy(self, operation):
+        return self.__class__(operation, self.job_id)
 
     def __enter__(self):
         return self
@@ -208,3 +226,26 @@ class DummyMonitor(object):
 
     def __exit__(self, etype, exc, tb):
         pass
+
+
+class LightMonitor(object):
+    """
+    in situations where a `PerformanceMonitor` is overkill or affects
+    the performance (as in short loops), this helper can aid in
+    measuring roughly the performance of a small piece of code. Please
+    note that it does not prevent the common traps in measuring the
+    performance as stated in the "Algorithms" chapter in the Python
+    Cookbook.
+    """
+
+    def __enter__(self):
+        self.t0 = time.time()
+        return self
+
+    def __init__(self, counter, operation):
+        self.counter = counter
+        self.operation = operation
+        self.t0 = None
+
+    def __exit__(self, etype, exc, tb):
+        self.counter.update({self.operation: time.time() - self.t0})

@@ -41,8 +41,6 @@ This could be the target for future optimizations.
 import itertools
 import numpy
 
-from django import db
-
 from openquake.engine.db import models
 from openquake.engine.utils import tasks
 
@@ -157,7 +155,7 @@ def gmf_to_hazard_curve_task(job_id, site, lt_rlz_id, imt, imls, hc_coll_id,
         Spectral Acceleration damping. Used only with ``imt`` of 'SA'.
     """
     lt_rlz = models.LtRealization.objects.get(id=lt_rlz_id)
-    gmfs = models.GmfAgg.objects.filter(
+    gmfs = models.GmfData.objects.filter(
         gmf__lt_realization=lt_rlz_id,
         imt=imt,
         sa_period=sa_period,

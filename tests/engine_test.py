@@ -14,10 +14,13 @@
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
 
-import getpass
-import os
 import StringIO
+import getpass
+import mock
+import os
+import shutil
 import subprocess
+import tempfile
 import unittest
 import warnings
 
@@ -125,10 +128,9 @@ bar = baz
         self.assertEqual(expected_params, params)
 
     def test_parse_config_with_files(self):
-        site_model_input = helpers.touch(content="foo")
-
-        try:
-            source = StringIO.StringIO("""
+        temp_dir = tempfile.mkdtemp()
+        site_model_input = helpers.touch(dir=temp_dir, content="foo")
+        job_config = helpers.touch(dir=temp_dir, content="""
 [general]
 calculation_mode = classical
 [site]
@@ -138,10 +140,8 @@ truncation_level=0
 random_seed=0
     """ % site_model_input)
 
-            # Add a 'name' to make this look like a real file:
-            source.name = 'path/to/some/job.ini'
-            exp_base_path = os.path.dirname(
-                os.path.join(os.path.abspath('.'), source.name))
+        try:
+            exp_base_path = os.path.dirname(job_config)
 
             expected_params = {
                 'base_path': exp_base_path,
@@ -151,13 +151,12 @@ random_seed=0
                 'maximum_distance': '0'
             }
 
-            params, files = engine.parse_config(source)
+            params, files = engine.parse_config(open(job_config, 'r'))
             self.assertEqual(expected_params, params)
             self.assertEqual(['site_model_file'], files.keys())
-            self.assertEqual('acbd18db4cc2f85cedef654fccc4a4d8',
-                             files['site_model_file'].digest)
+            self.assertEqual([site_model_input], files.values())
         finally:
-            os.unlink(site_model_input)
+            shutil.rmtree(temp_dir)
 
     def test__parse_sites_csv(self):
         expected_wkt = 'MULTIPOINT(0.1 0.2, 2 3, 4.1 5.6)'
@@ -239,11 +238,19 @@ class CreateHazardCalculationTestCase(unittest.TestCase):
         self.site_model = models.Input(digest='123', path='/foo/bar', size=0,
                                   input_type='site_model', owner=self.owner)
         self.site_model.save()
-        self.files = [self.site_model]
+        self.files = dict(site_model_file='/foo/bar')
 
     def test_create_hazard_calculation(self):
-        hc = engine.create_hazard_calculation(self.owner, self.params,
-                                              self.files)
+        with mock.patch('openquake.engine.engine.get_or_create_input') as goci:
+            hc = engine.create_hazard_calculation(
+                self.owner.user_name, self.params, self.files
+            )
+
+        self.assertEqual(1, goci.call_count)
+        exp_args = (('/foo/bar', 'site_model', self.owner),
+                    {'haz_calc_id': hc.id})
+        self.assertEqual(exp_args, goci.call_args)
+
         # Normalize/clean fields by fetching a fresh copy from the db.
         hc = models.HazardCalculation.objects.get(id=hc.id)
 
@@ -254,12 +261,6 @@ class CreateHazardCalculationTestCase(unittest.TestCase):
         self.assertEqual(hc.investigation_time, 50.0)
         self.assertEqual(hc.truncation_level, 0.0)
         self.assertEqual(hc.maximum_distance, 200.0)
-
-        # Test the input2haz_calc link:
-        [inp2hcs] = models.Input2hcalc.objects.filter(
-            hazard_calculation=hc.id)
-
-        self.assertEqual(self.site_model.id, inp2hcs.input.id)
 
     def test_create_hazard_calculation_warns(self):
         # If unknown parameters are specified in the config file, we expect
@@ -276,8 +277,11 @@ class CreateHazardCalculationTestCase(unittest.TestCase):
         ]
 
         with warnings.catch_warnings(record=True) as w:
-            engine.create_hazard_calculation(self.owner, self.params,
-                                             self.files)
+            with mock.patch(
+                    'openquake.engine.engine.get_or_create_input') as goci:
+                engine.create_hazard_calculation(
+                    self.owner.user_name, self.params, self.files
+                )
         actual_warnings = [msg.message.message for msg in w]
         self.assertEqual(sorted(expected_warnings), sorted(actual_warnings))
 
@@ -322,8 +326,22 @@ class CreateRiskCalculationTestCase(unittest.TestCase):
         exposure_file.save()
 
         files = [vuln_file, exposure_file]
+        files = dict(
+            structural_vulnerability_file='/foo/bar',
+            exposure_file='/foo/baz',
+        )
 
-        rc = engine.create_risk_calculation(owner, params, files)
+        with mock.patch('openquake.engine.engine.get_or_create_input') as goci:
+            rc = engine.create_risk_calculation(owner, params, files)
+
+        self.assertEqual(2, goci.call_count)
+        exp_args = [
+            (('/foo/baz', 'exposure', owner),
+             {'risk_calc_id': rc.id}),
+            (('/foo/bar', 'structural_vulnerability', owner),
+             {'risk_calc_id': rc.id}),
+        ]
+        self.assertEqual(exp_args, goci.call_args_list)
         # Normalize/clean fields by fetching a fresh copy from the db.
         rc = models.RiskCalculation.objects.get(id=rc.id)
 
@@ -337,26 +355,6 @@ class CreateRiskCalculationTestCase(unittest.TestCase):
              '0.5000000000000000 -0.5000000000000000, '
              '-0.5000000000000000 -0.5000000000000000, '
              '-0.5000000000000000 0.5000000000000000))'))
-
-
-class ReadJobProfileFromConfigFileTestCase(unittest.TestCase):
-    """Integration test for basic engine functions.
-
-    Test reading/generating a hazard job profile from a config file, then run
-    through the validation form.
-    """
-
-    def test_read_and_validate_hazard_config(self):
-        cfg = helpers.get_data_path('simple_fault_demo_hazard/job.ini')
-        job = engine.prepare_job(getpass.getuser())
-        params, files = engine.parse_config(open(cfg, 'r'))
-        calculation = engine.create_hazard_calculation(
-            job.owner, params, files.values())
-
-        form = validation.ClassicalHazardForm(
-            instance=calculation, files=files
-        )
-        self.assertTrue(form.is_valid())
 
 
 class OpenquakeCliTestCase(unittest.TestCase):
@@ -515,3 +513,236 @@ class DeleteRiskCalcTestCase(unittest.TestCase):
         risk_calc = risk_job.risk_calculation
 
         self.assertRaises(RuntimeError, engine.del_risk_calc, risk_calc.id)
+
+
+class FakeJob(object):
+    def __init__(self, hc, rc):
+        self.hazard_calculation = hc
+        self.risk_calculation = rc
+        self.status = ''
+
+class FakeCalc(object):
+    def __init__(self, calc_id):
+        self.id = calc_id
+
+
+class RunHazardTestCase(unittest.TestCase):
+
+    def setUp(self):
+        mocks = {
+            'touch': 'openquake.engine.engine.touch_log_file',
+            'job': 'openquake.engine.engine.haz_job_from_file',
+            'run': 'openquake.engine.engine.run_calc',
+            'complain': 'openquake.engine.engine.complain_and_exit',
+            'list': 'openquake.engine.engine.list_hazard_outputs',
+        }
+        self.mocks = helpers.MultiMock(**mocks)
+        self.job = FakeJob(FakeCalc(1), None)
+        self.complete_job = FakeJob(FakeCalc(1), None)
+        self.complete_job.status = 'complete'
+
+
+    def test(self):
+        with self.mocks:
+            self.mocks['job'].return_value = self.job
+            self.mocks['run'].return_value = self.complete_job
+
+            engine.run_hazard('job.ini', 'debug', 'oq.log', ['xml', 'geojson'])
+
+            self.assertEqual(1, self.mocks['touch'].call_count)
+            self.assertEqual((('oq.log',), {}), self.mocks['touch'].call_args)
+
+            self.assertEqual(1, self.mocks['job'].call_count)
+            self.assertEqual(
+                (('job.ini', getpass.getuser(), 'debug', ['xml', 'geojson']),
+                 {}),
+                self.mocks['job'].call_args
+            )
+
+            self.assertEqual(1, self.mocks['run'].call_count)
+            self.assertEqual(
+                ((self.job, 'debug', 'oq.log', ['xml', 'geojson'], 'hazard'),
+                 {}),
+                self.mocks['run'].call_args
+            )
+
+            self.assertEqual(1, self.mocks['list'].call_count)
+
+    def test_job_not_complete(self):
+        with self.mocks:
+            self.mocks['job'].return_value = self.job
+            self.complete_job.status = 'executing'
+            self.mocks['run'].return_value = self.complete_job
+
+            engine.run_hazard('job.ini', 'debug', 'oq.log', ['xml', 'geojson'])
+
+            self.assertEqual(0, self.mocks['list'].call_count)
+            self.assertEqual(1, self.mocks['complain'].call_count)
+
+    def test_no_log(self):
+        with self.mocks:
+            self.mocks['job'].return_value = self.job
+            self.mocks['run'].return_value = self.complete_job
+
+            engine.run_hazard('job.ini', 'debug', None, ['xml', 'geojson'])
+
+            self.assertEqual(0, self.mocks['touch'].call_count)
+
+
+class RunRiskTestCase(RunHazardTestCase):
+
+    def setUp(self):
+        mocks = {
+            'touch': 'openquake.engine.engine.touch_log_file',
+            'job': 'openquake.engine.engine.risk_job_from_file',
+            'run': 'openquake.engine.engine.run_calc',
+            'complain': 'openquake.engine.engine.complain_and_exit',
+            'list': 'openquake.engine.engine.list_risk_outputs',
+        }
+        self.mocks = helpers.MultiMock(**mocks)
+        self.job = FakeJob(None, FakeCalc(1))
+        self.complete_job = FakeJob(None, FakeCalc(1))
+        self.complete_job.status = 'complete'
+
+    def test(self):
+        with self.mocks:
+            self.mocks['job'].return_value = self.job
+            self.mocks['run'].return_value = self.complete_job
+
+            engine.run_risk('job.ini', 'debug', 'oq.log', ['xml', 'geojson'],
+                            None, 1)
+
+            self.assertEqual(1, self.mocks['touch'].call_count)
+            self.assertEqual((('oq.log',), {}), self.mocks['touch'].call_args)
+
+            self.assertEqual(1, self.mocks['job'].call_count)
+            self.assertEqual(
+                (('job.ini', getpass.getuser(), 'debug', ['xml', 'geojson'],
+                  None, 1),
+                 {}),
+                self.mocks['job'].call_args
+            )
+
+            self.assertEqual(1, self.mocks['run'].call_count)
+            self.assertEqual(
+                ((self.job, 'debug', 'oq.log', ['xml', 'geojson'], 'risk'),
+                 {}),
+                self.mocks['run'].call_args
+            )
+
+            self.assertEqual(1, self.mocks['list'].call_count)
+
+    def test_job_not_complete(self):
+        with self.mocks:
+            self.mocks['job'].return_value = self.job
+            self.complete_job.status = 'executing'
+            self.mocks['run'].return_value = self.complete_job
+
+            engine.run_risk('job.ini', 'debug', 'oq.log', ['xml', 'geojson'],
+                            1, None)
+
+            self.assertEqual(0, self.mocks['list'].call_count)
+            self.assertEqual(1, self.mocks['complain'].call_count)
+
+    def test_no_log(self):
+        with self.mocks:
+            self.mocks['job'].return_value = self.job
+            self.mocks['run'].return_value = self.complete_job
+
+            engine.run_risk('job.ini', 'debug', None, ['xml', 'geojson'], 1,
+                            None)
+
+            self.assertEqual(0, self.mocks['touch'].call_count)
+
+
+class RunCalcTestCase(unittest.TestCase):
+
+    def setUp(self):
+        class FakeCalc(object):
+            def __init__(self, job):
+                self.job = job
+
+            def __eq__(self, other):
+                return self.job.id == other.job.id
+
+        mocks = dict(
+            get_calc='openquake.engine.engine.get_calculator_class',
+            job_stats='openquake.engine.engine._create_job_stats',
+            job_exec='openquake.engine.engine._job_exec',
+            cleanup=('openquake.engine.supervising.supervisor'
+                     '.cleanup_after_job'),
+            supervise=('openquake.engine.supervising.supervisor'
+                       '.supervise'),
+            get_job='openquake.engine.engine._get_job',
+            fork='os.fork',
+        )
+        self.mm = helpers.MultiMock(**mocks)
+        self.job = mock.Mock()
+        self.job.id = 1984
+        self.job.hazard_calculation.calculation_mode = 'classical'
+
+        self.calc_class = FakeCalc
+        self.calc_instance = self.calc_class(self.job)
+
+    def test_supervised(self):
+        # Due to the way the executor/supervisor process/forking logic is
+        # defined, we can't really test the supervisor part of the workflow;
+        # we can only test the job executor.
+        mm = self.mm
+
+        with mm:
+            mm['get_job'].return_value = self.job
+            mm['get_calc'].return_value = self.calc_class
+
+            mm['fork'].return_value = 0
+
+            engine.run_calc(self.job, 'debug', 'oq.log', ['geojson'], 'hazard',
+                            supervised=True)
+
+        # Check the intermediate function calls and the flow of data:
+        self.assertEqual(1, mm['get_calc'].call_count)
+        self.assertEqual((('hazard', 'classical'), {}),
+                         mm['get_calc'].call_args)
+
+        self.assertEqual(1, mm['job_stats'].call_count)
+        self.assertEqual(((self.job, ), {}), mm['job_stats'].call_args)
+
+        self.assertEqual(1, mm['job_exec'].call_count)
+        self.assertEqual(
+            ((self.job, 'debug', 'oq.log', ['geojson'], 'hazard',
+              self.calc_instance),
+             {}),
+            mm['job_exec'].call_args
+        )
+
+    def test_unsupervised(self):
+        mm = self.mm
+
+        with mm:
+            mm['get_job'].return_value = self.job
+            mm['get_calc'].return_value = self.calc_class
+
+            engine.run_calc(self.job, 'debug', 'oq.log', ['geojson'], 'hazard',
+                            supervised=False)
+
+        # Check the intermediate function calls and the flow of data:
+        self.assertEqual(1, mm['get_calc'].call_count)
+        self.assertEqual((('hazard', 'classical'), {}),
+                         mm['get_calc'].call_args)
+
+        self.assertEqual(1, mm['job_stats'].call_count)
+        self.assertEqual(((self.job, ), {}), mm['job_stats'].call_args)
+
+        self.assertEqual(1, mm['job_exec'].call_count)
+        self.assertEqual(
+            ((self.job, 'debug', 'oq.log', ['geojson'], 'hazard',
+              self.calc_instance),
+             {}),
+            mm['job_exec'].call_args
+        )
+
+        self.assertEqual(1, mm['cleanup'].call_count)
+        self.assertEqual(((1984, ), {}), mm['cleanup'].call_args)
+
+        self.assertEqual(1, mm['get_job'].call_count)
+        self.assertEqual(((1984, ), {}), mm['get_job'].call_args)

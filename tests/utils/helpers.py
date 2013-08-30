@@ -36,7 +36,11 @@ import sys
 import tempfile
 import textwrap
 import time
-import shapely
+
+from openquake.hazardlib.source.rupture import ProbabilisticRupture
+from openquake.hazardlib.geo import Point
+from openquake.hazardlib.geo.surface.planar import PlanarSurface
+from openquake.hazardlib.tom import PoissonTOM
 
 from django.core import exceptions
 
@@ -44,6 +48,8 @@ from openquake.engine.db import models
 from openquake.engine import engine
 from openquake.engine import logs
 from openquake.engine.utils import config, get_calculator_class
+from openquake.engine.job.validation import validate
+
 
 
 CD = os.path.dirname(__file__)  # current directory
@@ -121,10 +127,6 @@ def demo_file(file_name):
         os.path.dirname(__file__), "../../demos", file_name)
 
 
-# this function is used in various tests to run a computation in-process;
-# task distribution is disabled by default to make it possible to debug and
-# profile the tests; notice however that in the QA tests (see
-# BaseQATestCase.run_hazard) the distribution is enabled
 def run_hazard_job(cfg, exports=None):
     """
     Given the path to job config file, run the job and assert that it was
@@ -443,19 +445,6 @@ def touch(content=None, dir=None, prefix="tmp", suffix="tmp"):
     return path
 
 
-class DbTestCase(object):
-    """Class which contains various db-related testing helpers."""
-
-    IMLS = [0.005, 0.007, 0.0098, 0.0137, 0.0192, 0.0269, 0.0376, 0.0527,
-            0.0738, 0.103, 0.145, 0.203, 0.284, 0.397, 0.556, 0.778]
-
-    @classmethod
-    def teardown_inputs(cls, inputs, filesystem_only):
-        if filesystem_only:
-            return
-        [input.delete() for input in inputs]
-
-
 class ConfigTestCase(object):
     """Class which contains various configuration- and environment-related
     testing helpers."""
@@ -514,24 +503,6 @@ def random_string(length=16):
     while len(result) < length:
         result += random.choice(string.letters + string.digits)
     return result
-
-
-def prepare_cli_output(raw_output, discard_header=True):
-    """Given a huge string of output from a `subprocess.check_output` call,
-    split on newlines, strip, and discard empty lines.
-
-    If ``discard_header`` is `True`, drop the first row in the output.
-
-    Returns a `list` of strings, 1 for each row in the CLI output.
-    """
-    lines = raw_output.split('\n')
-    # strip and drop empty lines
-    lines = [x.strip() for x in lines if len(x.strip()) > 0]
-
-    if discard_header:
-        lines.pop(0)
-
-    return lines
 
 
 def deep_eq(a, b, decimal=7, exclude=None):
@@ -633,14 +604,7 @@ def get_hazard_job(cfg, username=None):
     """
     username = username if username is not None else default_user().user_name
 
-    job = engine.prepare_job(username)
-    params, files = engine.parse_config(open(cfg, 'r'))
-    haz_calc = engine.create_hazard_calculation(
-        job.owner, params, files.values())
-    haz_calc = models.HazardCalculation.objects.get(id=haz_calc.id)
-    job.hazard_calculation = haz_calc
-    job.save()
-    return job
+    return engine.haz_job_from_file(cfg, username, 'error', [])
 
 
 def get_risk_job(cfg, username=None, hazard_calculation_id=None,
@@ -666,7 +630,7 @@ def get_risk_job(cfg, username=None, hazard_calculation_id=None,
     )
 
     risk_calc = engine.create_risk_calculation(
-        job.owner, params, files.values())
+        job.owner, params, files)
     risk_calc = models.RiskCalculation.objects.get(id=risk_calc.id)
     job.risk_calculation = risk_calc
     job.save()
@@ -708,7 +672,7 @@ def create_gmf_data_records(hazard_job, rlz=None, ses_coll=None, points=None):
                   (15.48, 38.091), (15.565, 38.17),
                   (15.481, 38.25)]
     for site_id in hazard_job.hazard_calculation.save_sites(points):
-        records.append(models.GmfAgg.objects.create(
+        records.append(models.GmfData.objects.create(
             gmf=gmf_coll,
             ses=ruptures[0].ses,
             imt="PGA",
@@ -754,7 +718,7 @@ def create_gmf_from_csv(job, fname):
 
             point = tuple(map(float, locations[i].split()))
             [site_id] = job.hazard_calculation.save_sites([point])
-            models.GmfAgg.objects.create(
+            models.GmfData.objects.create(
                 gmf=gmf_coll,
                 ses=ruptures[0].ses,
                 imt="PGA", gmvs=gmvs,
@@ -787,7 +751,7 @@ def populate_gmf_data_from_csv(job, fname):
         for i, gmvs in enumerate(gmv_matrix):
             point = tuple(map(float, locations[i].split()))
             [site_id] = job.hazard_calculation.save_sites([point])
-            models.GmfAgg.objects.create(
+            models.GmfData.objects.create(
                 imt="PGA",
                 gmf=gmf_coll,
                 gmvs=gmvs,
@@ -848,7 +812,7 @@ def get_fake_risk_job(risk_cfg, hazard_cfg, output_type="curve",
         site_ids = hazard_job.hazard_calculation.save_sites(
             [(15.48, 38.0900001), (15.565, 38.17), (15.481, 38.25)])
         for site_id in site_ids:
-            models.GmfAgg.objects.create(
+            models.GmfData.objects.create(
                 gmf=hazard_output,
                 imt="PGA",
                 site_id=site_id,
@@ -865,11 +829,15 @@ def get_fake_risk_job(risk_cfg, hazard_cfg, output_type="curve",
 
     params.update(dict(hazard_output_id=hazard_output.output.id))
 
-    risk_calc = engine.create_risk_calculation(
-        job.owner, params, files.values())
-    risk_calc = models.RiskCalculation.objects.get(id=risk_calc.id)
+    risk_calc = engine.create_risk_calculation(job.owner, params, files)
     job.risk_calculation = risk_calc
     job.save()
+    error_message = validate(job, 'risk', params, files, [])
+
+    # reload risk calculation to have all the types converted properly
+    job.risk_calculation = models.RiskCalculation.objects.get(id=risk_calc.id)
+    if error_message:
+        raise RuntimeError(error_message)
     return job, files
 
 
@@ -896,17 +864,77 @@ def get_ruptures(job, ses_collection, num):
     return [
         models.SESRupture.objects.create(
             ses=ses,
-            magnitude=i * 10. / float(num),
-            strike=0,
-            dip=0,
-            rake=0,
-            tectonic_region_type="test region type",
-            is_from_fault_source=False,
-            lons=[], lats=[], depths=[])
+            rupture=ProbabilisticRupture(
+                mag=1 + i * 10. / float(num), rake=0,
+                tectonic_region_type="test region type",
+                hypocenter=Point(0, 0, 0.1),
+                surface=PlanarSurface(
+                    10, 11, 12, Point(0, 0, 1), Point(1, 0, 1),
+                    Point(1, 0, 2), Point(0, 0, 2)),
+                occurrence_rate=1,
+                temporal_occurrence_model=PoissonTOM(10),
+                source_typology=object()))
         for i in range(num)]
 
 
-def random_location_generator(min_x=-180, max_x=180, min_y=-90, max_y=90):
-    return shapely.geometry.Point(
-        (min_x + random.random() * (max_x - min_x),
-         min_y + random.random() * (max_y - min_y)))
+class MultiMock(object):
+    """
+    Context-managed multi-mock object. This is useful if you need to mock
+    multiple things at once. So instead of creating individual patch+mock
+    objects for each, you can define them basically as a dictionary. You can
+    also use the mock context managers without having to nest `with`
+    statements.
+
+    Example usage:
+
+    .. code-block:: python
+
+        # First, define your mock targets as a dictionary.
+        # The value of each item is the path to the function/method you wish to
+        # mock. The key is basically a shortcut to the mock.
+        mocks = {
+            'touch': 'openquake.engine.engine.touch_log_file',
+            'job': 'openquake.engine.engine.haz_job_from_file',
+        }
+        multi_mock = MultiMock(**mocks)
+
+        # To start mocking, start the context manager using `with`:
+        # with multi_mock:
+        with multi_mock:
+            # You can mock return values, for example, just as you would with
+            # any other Mock object:
+            multi_mock['job'].return_value = 'foo'
+
+            # call the function under test which will calls the mocked
+            # functions
+            engine.run_hazard('job.ini', 'debug', 'oq.log', ['geojson'])
+
+            # To test the mocks, you can simply access each mock from
+            # `multi_mock` like a dict:
+            assert multi_mock['touch'].call_count == 1
+    """
+
+    def __init__(self, **mocks):
+        # dict of mock names -> mock paths
+        self._mocks = mocks
+        self.active_patches = {}
+        self.active_mocks = {}
+
+    def __enter__(self):
+        for key, value in self._mocks.iteritems():
+            the_patch = mock_module.patch(value)
+            self.active_patches[key] = the_patch
+            self.active_mocks[key] = the_patch.start()
+        return self
+
+    def __exit__(self, *args):
+        for each_mock in self.active_mocks.itervalues():
+            each_mock.stop()
+        for each_patch in self.active_patches.itervalues():
+            each_patch.stop()
+
+    def __iter__(self):
+        return self.active_mocks.itervalues()
+
+    def __getitem__(self, key):
+        return self.active_mocks.get(key)

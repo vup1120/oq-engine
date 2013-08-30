@@ -39,33 +39,26 @@ class Inputs4HazCalcTestCase(unittest.TestCase):
         cfg = helpers.get_data_path('simple_fault_demo_hazard/job.ini')
         params, files = engine.parse_config(open(cfg, 'r'))
         owner = helpers.default_user()
-        hc = engine.create_hazard_calculation(owner, params, files.values())
-
-        expected_ids = sorted([x.id for x in files.values()])
+        hc = engine.create_hazard_calculation(
+            owner.user_name, params, files
+        )
 
         inputs = models.inputs4hcalc(hc.id)
-
-        actual_ids = sorted([x.id for x in inputs])
-
-        self.assertEqual(expected_ids, actual_ids)
+        # We expect 3: the two logic trees and one source model
+        self.assertEqual(3, inputs.count())
 
     def test_with_input_type(self):
         cfg = helpers.get_data_path('simple_fault_demo_hazard/job.ini')
         params, files = engine.parse_config(open(cfg, 'r'))
         owner = helpers.default_user()
-        hc = engine.create_hazard_calculation(owner, params, files.values())
-
-        # It should only be 1 id, actually.
-        expected_ids = [x.id for x in files.values()
-                        if x.input_type == 'source_model_logic_tree']
+        hc = engine.create_hazard_calculation(
+            owner.user_name, params, files
+        )
 
         inputs = models.inputs4hcalc(
             hc.id, input_type='source_model_logic_tree'
         )
-
-        actual_ids = sorted([x.id for x in inputs])
-
-        self.assertEqual(expected_ids, actual_ids)
+        self.assertEqual(1, inputs.count())
 
 
 class Inputs4RiskCalcTestCase(unittest.TestCase):
@@ -79,13 +72,9 @@ class Inputs4RiskCalcTestCase(unittest.TestCase):
             get_data_path('simple_fault_demo_hazard/job.ini'))
         rc = job.risk_calculation
 
-        expected_ids = sorted([x.id for x in files.values()])
 
         inputs = models.inputs4rcalc(rc.id)
-
-        actual_ids = sorted([x.id for x in inputs])
-
-        self.assertEqual(expected_ids, actual_ids)
+        self.assertEqual(2, inputs.count())
 
     def test_with_input_type(self):
         job, files = helpers.get_fake_risk_job(
@@ -93,15 +82,8 @@ class Inputs4RiskCalcTestCase(unittest.TestCase):
             get_data_path('simple_fault_demo_hazard/job.ini'))
         rc = job.risk_calculation
 
-        # It should only be 1 id, actually.
-        expected_ids = [x.id for x in files.values()
-                        if x.input_type == 'exposure']
-
         inputs = models.inputs4rcalc(rc.id, input_type='exposure')
-
-        actual_ids = sorted([x.id for x in inputs])
-
-        self.assertEqual(expected_ids, actual_ids)
+        self.assertEqual(1, inputs.count())
 
 
 class HazardCalculationGeometryTestCase(unittest.TestCase):
@@ -213,7 +195,7 @@ class HazardCalculationGeometryTestCase(unittest.TestCase):
         hc = models.HazardCalculation(
             region='6.5 45.8, 6.5 46.5, 8.5 46.5, 8.5 45.8',
             region_grid_spacing=20)
-        mesh = hc.points_to_compute()
+        mesh = hc.points_to_compute(save_sites=False)
 
         numpy.testing.assert_array_almost_equal(lons, mesh.lons)
         numpy.testing.assert_array_almost_equal(lats, mesh.lats)
@@ -224,7 +206,7 @@ class HazardCalculationGeometryTestCase(unittest.TestCase):
         hc = models.HazardCalculation(
             sites='6.5 45.8, 6.5 46.5, 8.5 46.5, 8.5 45.8')
 
-        mesh = hc.points_to_compute()
+        mesh = hc.points_to_compute(save_sites=False)
 
         numpy.testing.assert_array_equal(lons, mesh.lons)
         numpy.testing.assert_array_equal(lats, mesh.lats)
@@ -261,15 +243,17 @@ class SESRuptureTestCase(unittest.TestCase):
         self.ps_depths = [0.1, 0.2, 0.3, 0.4]
 
         self.fault_rupture = models.SESRupture.objects.create(
-            ses=ses, magnitude=5, strike=0, dip=0, rake=0,
-            tectonic_region_type='Active Shallow Crust',
-            is_from_fault_source=True, lons=self.mesh_lons,
-            lats=self.mesh_lats, depths=self.mesh_depths)
+            ses=ses, old_magnitude=5, old_strike=0, old_dip=0, old_rake=0,
+            old_tectonic_region_type='Active Shallow Crust',
+            old_is_from_fault_source=True, old_lons=self.mesh_lons,
+            old_is_multi_surface=False,
+            old_lats=self.mesh_lats, old_depths=self.mesh_depths)
         self.source_rupture = models.SESRupture.objects.create(
-            ses=ses, magnitude=5, strike=0, dip=0, rake=0,
-            tectonic_region_type='Active Shallow Crust',
-            is_from_fault_source=False, lons=self.ps_lons, lats=self.ps_lats,
-            depths=self.ps_depths)
+            ses=ses, magnitude=5, old_strike=0, old_dip=0, old_rake=0,
+            old_tectonic_region_type='Active Shallow Crust',
+            old_is_from_fault_source=False, old_lons=self.ps_lons,
+            old_is_multi_surface=False,
+            old_lats=self.ps_lats, old_depths=self.ps_depths)
 
     def test_fault_rupture(self):
         # Test loading a fault rupture from the DB, just to illustrate a use
@@ -303,17 +287,17 @@ class SESRuptureTestCase(unittest.TestCase):
         # If any of the coord attributes are a len != 4,
         # we should get an exception
 
-        source_rupture.lons = [1, 2, 3]
+        source_rupture.old_lons = [1, 2, 3]
         self.assertRaises(ValueError, source_rupture._validate_planar_surface)
-        source_rupture.lons = lons
+        source_rupture.old_lons = lons
 
-        source_rupture.lats = [1, 2, 3]
+        source_rupture.old_lats = [1, 2, 3]
         self.assertRaises(ValueError, source_rupture._validate_planar_surface)
-        source_rupture.lats = lats
+        source_rupture.old_lats = lats
 
-        source_rupture.depths = [1, 2, 3]
+        source_rupture.old_depths = [1, 2, 3]
         self.assertRaises(ValueError, source_rupture._validate_planar_surface)
-        source_rupture.depths = depths
+        source_rupture.old_depths = depths
 
 
 class ParseImtTestCase(unittest.TestCase):

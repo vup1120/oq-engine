@@ -51,6 +51,9 @@ GEM_BUILD_SRC="${GEM_BUILD_ROOT}/${GEM_DEB_PACKAGE}"
 GEM_ALWAYS_YES=false
 
 GEM_NUMB_OF_WORKERS=1
+# By setting this variable to "true", the script will generate the
+# test fixture from scratch
+# GEM_GENERATE_FIXTURE=true
 
 if [ "$GEM_EPHEM_CMD" = "" ]; then
     GEM_EPHEM_CMD="lxc-start-ephemeral"
@@ -114,7 +117,20 @@ dep2var () {
 #
 #  repo_id_get - retry git repo from local git remote command
 repo_id_get () {
-    repo_line="$(git remote -vv | grep "^origin[ ${TB}]" | grep '(fetch)$')"
+    local repo_name repo_line
+
+    if ! repo_name="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)"; then
+        repo_line="$(git remote -vv | grep "^origin[ ${TB}]" | grep '(fetch)$')"
+        if [ -z "$repo_line" ]; then
+            echo "no remote repository associated with the current branch, exit 1"
+            exit 1
+        fi
+    else
+        repo_name="$(echo "$repo_name" | sed 's@/.*@@g')"
+
+        repo_line="$(git remote -vv | grep "^${repo_name}[ ${TB}].*(fetch)\$")"
+    fi
+
     if echo "$repo_line" | grep -q '[0-9a-z_-\.]\+@[a-z0-9_-\.]\+:'; then
         repo_id="$(echo "$repo_line" | sed "s/^[^ ${TB}]\+[ ${TB}]\+[^ ${TB}@]\+@//g;s/.git[ ${TB}]\+(fetch)$/.git/g;s@/${GEM_GIT_PACKAGE}.git@@g;s@:@/@g")"
     else
@@ -235,6 +251,7 @@ _devtest_innervm_run () {
 
     trap 'local LASTERR="$?" ; trap ERR ; (exit $LASTERR) ; return' ERR
 
+    ssh $lxc_ip "rm -f ssh.log"
     ssh $lxc_ip "sudo apt-get update"
     ssh $lxc_ip "sudo apt-get upgrade -y"
 
@@ -257,7 +274,8 @@ _devtest_innervm_run () {
     ssh $lxc_ip "sudo apt-get install -y ${pkgs_list}"
 
     # build oq-hazardlib speedups and put in the right place
-    ssh $lxc_ip "cd oq-hazardlib
+    ssh $lxc_ip "set -e
+                 cd oq-hazardlib
                  python ./setup.py build
                  for i in \$(find build/ -name *.so); do
                      o=\"\$(echo \"\$i\" | sed 's@^[^/]\+/[^/]\+/@@g')\"
@@ -269,7 +287,7 @@ _devtest_innervm_run () {
 
     # configure the machine to run tests
     ssh $lxc_ip "echo \"local   all             \$USER          trust\" | sudo tee -a /etc/postgresql/9.1/main/pg_hba.conf"
-    ssh $lxc_ip "
+    ssh $lxc_ip "set -e
         for dbu in oq_reslt_writer oq_job_superv oq_job_init oq_admin; do
             sudo sed -i \"1ilocal   openquake   \$dbu                   md5\" /etc/postgresql/9.1/main/pg_hba.conf
         done"
@@ -279,7 +297,7 @@ _devtest_innervm_run () {
     ssh $lxc_ip "sudo service postgresql restart"
     ssh $lxc_ip "sudo -u postgres  createuser -d -e -i -l -s -w \$USER"
 
-    ssh $lxc_ip "sudo su postgres -c \"cd oq-engine ; bin/create_oq_schema --yes --db-user=\\\$USER --db-name=openquake --schema-path=\\\$(pwd)/openquake/engine/db/schema\""
+    ssh $lxc_ip "sudo su postgres -c \"cd oq-engine ; openquake/engine/bin/oq_create_db --yes --db-user=\\\$USER --db-name=openquake --schema-path=\\\$(pwd)/openquake/engine/db/schema\""
 
     for dbu in oq_admin oq_job_init oq_job_superv oq_reslt_writer; do
         ssh $lxc_ip "sudo su postgres -c \"psql -c \\\"ALTER ROLE $dbu WITH PASSWORD 'openquake'\\\"\""
@@ -290,8 +308,19 @@ _devtest_innervm_run () {
     # run celeryd daemon
     ssh $lxc_ip "export PYTHONPATH=\"\$PWD/oq-engine:\$PWD/oq-nrmllib:\$PWD/oq-hazardlib:\$PWD/oq-risklib\" ; cd oq-engine ; celeryd >/tmp/celeryd.log 2>&1 3>&1 &"
 
+    if [ "$GEM_GENERATE_FIXTURE" == "true" ]; then
+        ssh $lxc_ip "export PYTHONPATH=\"\$PWD/oq-engine:\$PWD/oq-nrmllib:\$PWD/oq-hazardlib:\$PWD/oq-risklib\" ; cd oq-engine ; ./bin/build_fixture --reuse-db"
+    fi
+
     if [ -z "$GEM_DEVTEST_SKIP_TESTS" ]; then
-        # run tests
+        # load test fixtures
+        ssh $lxc_ip "export PYTHONPATH=\"\$PWD/oq-engine:\$PWD/oq-nrmllib:\$PWD/oq-hazardlib:\$PWD/oq-risklib\" ; cd oq-engine ;
+                 for i in \$(find qa_tests/risk/ -iname fixtures.tar); do
+                   python openquake/engine/tools/restore_hazards.py \$i
+                 done"
+
+
+        # run tests (in this case we omit 'set -e' to be able to read all tests outputs)
         ssh $lxc_ip "export PYTHONPATH=\"\$PWD/oq-engine:\$PWD/oq-nrmllib:\$PWD/oq-hazardlib:\$PWD/oq-risklib\" ;
                  cd oq-engine ;
                  nosetests -v --with-xunit --with-coverage --cover-package=openquake.engine --with-doctest -x tests/
@@ -321,6 +350,8 @@ _devtest_innervm_run () {
         fi
     fi
 
+    scp "${lxc_ip}:ssh.log" devtest.history
+
     # TODO: version check
     trap ERR
 
@@ -346,6 +377,7 @@ _pkgtest_innervm_run () {
 
     trap 'local LASTERR="$?" ; trap ERR ; (exit $LASTERR) ; return' ERR
 
+    ssh $lxc_ip "rm -f ssh.log"
     ssh $lxc_ip "sudo apt-get update"
     ssh $lxc_ip "sudo apt-get -y upgrade"
     gpg -a --export | ssh $lxc_ip "sudo apt-key add -"
@@ -424,7 +456,7 @@ _pkgtest_innervm_run () {
 
     if [ -z "$GEM_PKGTEST_SKIP_DEMOS" ]; then
         # run all of the hazard and risk demos
-        ssh $lxc_ip "export GEM_PKGTEST_ONE_DEMO=$GEM_PKGTEST_ONE_DEMO ; cd demos
+        ssh $lxc_ip "set -e; export GEM_PKGTEST_ONE_DEMO=$GEM_PKGTEST_ONE_DEMO ; cd demos
         for ini in \$(find ./hazard -name job.ini); do
             echo \"Running demo \$ini\"
             openquake --run-hazard  \$ini --exports xml
@@ -442,6 +474,8 @@ _pkgtest_innervm_run () {
             cd -
         done"
     fi
+
+    scp "${lxc_ip}:ssh.log" pkgtest.history
 
     trap ERR
     return
@@ -663,7 +697,7 @@ _lxc_name_and_ip_get()
                 #Aug 27 16:40:47 pc-nastasi dnsmasq-dhcp[14357]: 1875896329 DHCPACK(lxcbr0) \
                 #172.16.9.33 00:16:3e:71:fc:aa ubuntu-lxc-eph-temp-g4zo86z
                 if grep -q ".*dnsmasq-dhcp.*DHCPACK.*${lxc_name}\$" /var/log/syslog ; then
-                    lxc_ip="$(grep ".*dnsmasq-dhcp.*DHCPACK.*${lxc_name}\$" /var/log/syslog | cut -d ' ' -f 7)"
+                    lxc_ip="$(grep ".*dnsmasq-dhcp.*DHCPACK.*${lxc_name}\$" /var/log/syslog | cut -d ' ' -f 8)"
                     break
                 fi
             done
@@ -686,13 +720,6 @@ devtest_run () {
     local deps old_ifs branch_id="$1"
 
     mkdir _jenkins_deps
-
-    sudo echo
-    sudo ${GEM_EPHEM_CMD} -o $GEM_EPHEM_NAME -d 2>&1 | tee /tmp/packager.eph.$$.log &
-    _lxc_name_and_ip_get /tmp/packager.eph.$$.log
-    rm /tmp/packager.eph.$$.log
-
-    _wait_ssh $lxc_ip
 
     #
     #  dependencies repos
@@ -726,12 +753,27 @@ devtest_run () {
             git clone $repo/${dep}.git _jenkins_deps/$dep
             branch="master"
         fi
+        cd _jenkins_deps/$dep
+        commit="$(git log -1 | grep '^commit' | sed 's/^commit //g')"
+        cd -
+        echo "dependency: $dep"
+        echo "repo:       $repo"
+        echo "branch:     $branch"
+        echo "commit:     $commit"
+        echo
         var_pfx="$(dep2var "$dep")"
-        echo "${var_pfx}_REPO=$repo" >> _jenkins_deps_info
+        echo "${var_pfx}_COMMIT=$commit" >> _jenkins_deps_info
+        echo "${var_pfx}_REPO=$repo"     >> _jenkins_deps_info
         echo "${var_pfx}_BRANCH=$branch" >> _jenkins_deps_info
     done
     IFS="$old_ifs"
 
+    sudo echo
+    sudo ${GEM_EPHEM_CMD} -o $GEM_EPHEM_NAME -d 2>&1 | tee /tmp/packager.eph.$$.log &
+    _lxc_name_and_ip_get /tmp/packager.eph.$$.log
+    rm /tmp/packager.eph.$$.log
+
+    _wait_ssh $lxc_ip
     set +e
     _devtest_innervm_run "$branch_id" "$lxc_ip"
     inner_ret=$?
@@ -1055,9 +1097,6 @@ mv LICENSE         openquake/engine
 mv README.txt      openquake/engine/README
 mv celeryconfig.py openquake/engine
 mv openquake.cfg   openquake/engine
-
-mv bin/openquake   bin/oqscript.py
-mv bin             openquake/engine/bin
 
 dpkg-buildpackage $DPBP_FLAG
 cd -

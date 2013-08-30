@@ -18,7 +18,6 @@
 Scenario calculator core functionality
 """
 import random
-from cStringIO import StringIO
 from django.db import transaction
 import numpy
 
@@ -100,11 +99,11 @@ def save_gmf(gmfcoll_id, gmf_dict, sites):
     :param dict gmf_dict:
         The GMF results during the calculation
     :param sites:
-        An :class:`openquake.engine.calculators.hazard.general.SiteCollection`
+        An :class:`openquake.engine.models.SiteCollection`
         object
     """
-    inserter = writer.CacheInserter(models.GmfAgg, 100)
-    # NB: GmfAgg may contain large arrays and the cache may become large
+    inserter = writer.CacheInserter(models.GmfData, 100)
+    # NB: GmfData may contain large arrays and the cache may become large
 
     for imt, gmfs_ in gmf_dict.iteritems():
         # ``gmfs`` comes in as a numpy.matrix
@@ -120,7 +119,7 @@ def save_gmf(gmfcoll_id, gmf_dict, sites):
         imt_name = imt.__class__.__name__
 
         for i, site in enumerate(sites):
-            inserter.add(models.GmfAgg(
+            inserter.add(models.GmfData(
                 gmf_id=gmfcoll_id,
                 ses_id=None,
                 imt=imt_name,
@@ -156,7 +155,7 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
             input=inp, hazard_calculation=self.hc)
 
         # Store the ParsedRupture record
-        src_content = StringIO(inp.model_content.raw_content)
+        src_content = inp.model_content.as_string_io
         rupt_parser = RuptureModelParser(src_content)
         src_db_writer = source.RuptureDBWriter(inp, rupt_parser.parse())
         src_db_writer.serialize()
@@ -215,6 +214,6 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
 
         for sites in block_splitter(self.hc.site_collection, BLOCK_SIZE):
             task_seed = rnd.randint(0, models.MAX_SINT_32)
-            yield (self.job.id, haz_general.SiteCollection(sites),
+            yield (self.job.id, models.SiteCollection(sites),
                    rupture_id, self.gmfcoll.id, task_seed,
                    self.hc.number_of_ground_motion_fields)

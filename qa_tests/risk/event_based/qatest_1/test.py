@@ -13,22 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
-
 from nose.plugins.attrib import attr as noseattr
-
 from qa_tests import risk
 
 from openquake.engine.db import models
 
 
 class EventBaseQATestCase1(risk.CompleteTestCase, risk.FixtureBasedQATestCase):
-    hazard_cfg = os.path.join(os.path.dirname(__file__), 'job_haz.ini')
-    risk_cfg = os.path.join(os.path.dirname(__file__), 'job_risk.ini')
-
     hazard_calculation_fixture = "PEB QA test 1"
 
-    @noseattr('qa', 'risk', 'event_based', 'e2e')
+    @noseattr('qa', 'risk', 'event_based')
     def test(self):
         self._run_test()
 
@@ -52,7 +46,7 @@ class EventBaseQATestCase1(risk.CompleteTestCase, risk.FixtureBasedQATestCase):
                     csv_name = "%s_%s" % (branch, cost)
                     data = self._csv(csv_name)
                     for i, asset in enumerate(assets):
-                        descriptor = (u'loss_curve', metadata, None,
+                        descriptor = (u'event_loss_curve', metadata, None,
                                       None, False, False, cost, asset)
                         asset_value = data[i * 2 + 1, 0]
                         curve = models.LossCurveData(
@@ -76,20 +70,11 @@ class EventBaseQATestCase1(risk.CompleteTestCase, risk.FixtureBasedQATestCase):
             for i, branch in enumerate(branches.values())]
 
         # we check only the first 10 values of the event loss table
-        data = self._csv('event_loss_table')[1:, 0:2]
-        data = sorted(data, key=lambda v: -v[1])[0:10]
+        data = self._csv('event_loss_table')[1:, 0:3]
+        data = sorted(data, key=lambda v: -v[2])[0:10]
         event_loss_table_b1 = [
             ((u'event_loss', branches["b1"], "structural", i),
              models.EventLossData(rupture_id=i, aggregate_loss=j))
-            for i, j in data]
+            for i, _m, j in data]
 
-        data = self._csv('event_loss_table')[1:, 3:5]
-        data = sorted(data, key=lambda v: -v[1])[0:10]
-
-        event_loss_table_b2 = [
-            ((u'event_loss', branches["b2"], "structural", i),
-             models.EventLossData(rupture_id=i, aggregate_loss=j))
-            for i, j in data]
-
-        return (loss_curves + aggregate_loss_curves +
-                event_loss_table_b1 + event_loss_table_b2)
+        return loss_curves + aggregate_loss_curves + event_loss_table_b1

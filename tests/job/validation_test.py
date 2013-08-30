@@ -930,14 +930,14 @@ class ScenarioRiskValidationTestCase(unittest.TestCase):
 
         form = validation.ScenarioRiskForm(
             instance=rc,
-            files=dict(occupancy_vulnerability_file=object())
+            files=dict(occupants_vulnerability_file=object())
         )
 
         expected_errors = {
             'asset_correlation': [u'Enter a number.',
                                   u'Asset Correlation must be >= 0 and <= 1'],
              'time_event': ['Scenario Risk requires time_event when an '
-                            'occupancy vulnerability model is given'],
+                            'occupants vulnerability model is given'],
         }
         self.assertFalse(form.is_valid())
         self.assertEqual(expected_errors, dict(form.errors))
@@ -960,8 +960,9 @@ class ValidateTestCase(unittest.TestCase):
         # Add a few superfluous parameters:
         params['ses_per_logic_tree_path'] = 5
         params['ground_motion_correlation_model'] = 'JB2009'
-        calculation = engine.create_hazard_calculation(job.owner, params,
-                                                       files.values())
+        calculation = engine.create_hazard_calculation(
+            job.owner.user_name, params, files
+        )
         job.hazard_calculation = calculation
         job.save()
 

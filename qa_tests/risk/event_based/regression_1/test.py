@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
-
 from nose.plugins.attrib import attr as noseattr
 
 from qa_tests import risk
@@ -25,7 +23,6 @@ from openquake.engine.db import models
 
 # FIXME(lp). This is just a regression test
 class EventBasedRiskCase1TestCase(risk.BaseRiskQATestCase):
-    risk_cfg = os.path.join(os.path.dirname(__file__), 'job.ini')
     output_type = "gmf"
 
     @noseattr('qa', 'risk', 'event_based')
@@ -35,8 +32,7 @@ class EventBasedRiskCase1TestCase(risk.BaseRiskQATestCase):
     def get_hazard_job(self):
         job = helpers.get_hazard_job(
             helpers.get_data_path("event_based_hazard/job.ini"))
-        helpers.create_gmf_from_csv(job, os.path.join(
-            os.path.dirname(__file__), 'gmf.csv'))
+        helpers.create_gmf_from_csv(job, self._test_path('gmf.csv'))
 
         return job
 
@@ -51,7 +47,17 @@ class EventBasedRiskCase1TestCase(risk.BaseRiskQATestCase):
                 loss_curve__output__oq_job=job,
                 loss_curve__aggregate=False,
                 loss_curve__insured=True).order_by('asset_ref')] +
+                [curve.stddev_loss_ratio
+                 for curve in models.LossCurveData.objects.filter(
+                loss_curve__output__oq_job=job,
+                loss_curve__aggregate=False,
+                loss_curve__insured=False).order_by('asset_ref')] +
                 [curve.average_loss
+                 for curve in models.AggregateLossCurveData.objects.filter(
+                loss_curve__output__oq_job=job,
+                loss_curve__aggregate=True,
+                loss_curve__insured=False)] +
+                [curve.stddev_loss
                  for curve in models.AggregateLossCurveData.objects.filter(
                 loss_curve__output__oq_job=job,
                 loss_curve__aggregate=True,
@@ -76,7 +82,9 @@ class EventBasedRiskCase1TestCase(risk.BaseRiskQATestCase):
         return [
             [0.07021910798], [0.015239297], [0.04549904],
             [0.07021910797], [0.015239291], [0.03423366],
+            [0.0059876], [0.0022866], [0.0053434],
             [278.904436],
+            [46.0207855534291],
             [263.37280611, 262.51974659, 261.66668707,
              30.96750422, 30.89424056, 30.82097689, 49.45179882, 49.29162539,
              49.13145195],
