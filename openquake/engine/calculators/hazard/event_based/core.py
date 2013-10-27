@@ -68,7 +68,7 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 # Disabling pylint for 'Too many local variables'
 # pylint: disable=R0914
 @tasks.oqtask
-def compute_ses(job_id, src_ids, ses, src_seeds):
+def compute_ses(job_id, sources, ses, src_seeds):
     """
     Celery task for the stochastic event set calculator.
 
@@ -101,11 +101,7 @@ def compute_ses(job_id, src_ids, ses, src_seeds):
             ses_collection__output__oq_job=job_id,
             ordinal=None)
 
-    ltp = logictree.LogicTreeProcessor(hc.id)
     lt_rlz = ses.ses_collection.lt_realization
-
-    apply_uncertainties = ltp.parse_source_model_logictree_path(
-        lt_rlz.sm_lt_path)
 
     src_filter = filters.source_site_distance_filter(hc.maximum_distance)
     rup_filter = filters.rupture_site_distance_filter(hc.maximum_distance)
@@ -113,12 +109,6 @@ def compute_ses(job_id, src_ids, ses, src_seeds):
     with EnginePerformanceMonitor(
             'reading site collection', job_id, compute_ses):
         site_collection = hc.site_collection
-
-    with EnginePerformanceMonitor(
-            'reading sources', job_id, compute_ses):
-        sources = list(haz_general.gen_sources(
-            src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
-            hc.width_of_mfd_bin, hc.area_source_discretization))
 
     # Compute and save stochastic event sets
     # For each rupture generated, we can optionally calculate a GMF
@@ -372,21 +362,32 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         realizations = self._get_realizations()
 
         for lt_rlz in realizations:
-            sources = models.SourceProgress.objects\
+            ltp = logictree.LogicTreeProcessor(self.hc.id)
+            src_ids = models.SourceProgress.objects\
                 .filter(is_complete=False, lt_realization=lt_rlz)\
                 .order_by('id')\
                 .values_list('parsed_source_id', flat=True)
+            apply_uncertainties = ltp.parse_source_model_logictree_path(
+                lt_rlz.sm_lt_path)
+
+            # generating the hazardlib sources only once in the master node
+            sources = list(
+                haz_general.gen_sources(
+                    src_ids, apply_uncertainties,
+                    self.hc.rupture_mesh_spacing,
+                    self.hc.width_of_mfd_bin,
+                    self.hc.area_source_discretization))
 
             all_ses = list(models.SES.objects.filter(
                            ses_collection__lt_realization=lt_rlz,
                            ordinal__isnull=False).order_by('ordinal'))
 
-            for src_ids in block_splitter(sources, self.preferred_block_size):
+            for srcs in block_splitter(sources, self.preferred_block_size):
                 for ses in all_ses:
                     # compute seeds for the sources
                     src_seeds = [rnd.randint(0, models.MAX_SINT_32)
-                                 for _ in src_ids]
-                    yield self.job.id, src_ids, ses, src_seeds
+                                 for _ in srcs]
+                    yield self.job.id, srcs, ses, src_seeds
 
     def compute_gmf_arg_gen(self):
         """
