@@ -36,10 +36,10 @@ import math
 import random
 import collections
 
-import openquake.hazardlib.imt
 import numpy.random
-
 from django.db import transaction
+
+import openquake.hazardlib.imt
 from openquake.hazardlib.calc import filters
 from openquake.hazardlib.calc import gmf
 from openquake.hazardlib.calc import stochastic
@@ -69,7 +69,7 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 # Disabling pylint for 'Too many local variables'
 # pylint: disable=R0914
 @tasks.oqtask
-def compute_ses(job_id, sources, site_coll, ses, src_seeds):
+def compute_ses(job_id, sources, ses, src_seeds):
     """
     Celery task for the stochastic event set calculator.
 
@@ -95,7 +95,6 @@ def compute_ses(job_id, sources, site_coll, ses, src_seeds):
     """
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     lt_rlz = ses.ses_collection.lt_realization
-    rup_filter = filters.rupture_site_distance_filter(hc.maximum_distance)
 
     # complete_logic_tree_ses flag
     cmplt_lt_ses = None
@@ -114,8 +113,7 @@ def compute_ses(job_id, sources, site_coll, ses, src_seeds):
             # then make copies of the hazardlib ruptures (which may contain
             # duplicates): the copy is needed to keep the tags distinct
             rupts = map(copy.copy, stochastic.stochastic_event_set_poissonian(
-                        [src], hc.investigation_time, site_coll,
-                        rupture_site_filter=rup_filter))
+                        [src], hc.investigation_time))
             # set the tag for each copy
             for i, r in enumerate(rupts):
                 r.tag = 'rlz=%02d|ses=%04d|src=%s|i=%03d' % (
@@ -377,18 +375,15 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                     sources = haz_general.gen_sources(
                         src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
                         hc.width_of_mfd_bin, hc.area_source_discretization)
-                    src_list = []
-                    site_list = []
-                    for source, sites in src_filter((s, hc.site_collection)
-                                                    for s in sources):
-                        src_list.append(source)
-                        site_list.extend(sites)
+                    src_list = [src for src, _sites in src_filter(
+                                (s, hc.site_collection) for s in sources)]
+                if not src_list:
+                    continue
                 for ses in all_ses:
                     # compute seeds for the sources
                     src_seeds = [rnd.randint(0, models.MAX_SINT_32)
                                  for _ in src_list]
-                    yield (self.job.id, src_list,
-                           models.SiteCollection(site_list), ses, src_seeds)
+                    yield (self.job.id, src_list, ses, src_seeds)
 
     def compute_gmf_arg_gen(self):
         """
@@ -399,6 +394,8 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
         site_coll = self.hc.site_collection
+        rup_filter = filters.rupture_site_distance_filter(
+            self.hc.maximum_distance)
         params = dict(
             correl_model=haz_general.get_correl_model(self.hc),
             truncation_level=self.hc.truncation_level,
@@ -410,11 +407,13 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                 ses_collection__lt_realization=lt_rlz,
                 ordinal__isnull=False).order_by('ordinal')
             for ses in all_ses:
-                # count the ruptures in the given SES
-                rupture_ids = models.SESRupture.objects.filter(
-                    ses=ses).values_list('id', flat=True)
-                if not rupture_ids:
-                    continue
+                # get the ruptures in the SES within the maximum distance
+                rupture_ids = []
+                for r in models.SESRupture.objects.filter(ses=ses):
+                    rup_sites = list(rup_filter([(r.rupture, site_coll)]))
+                    if rup_sites:
+                        rupture_ids.append(r.id)
+
                 # compute the associated seeds
                 rupture_seeds = [rnd.randint(0, models.MAX_SINT_32)
                                  for _ in range(len(rupture_ids))]
