@@ -69,7 +69,7 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 # Disabling pylint for 'Too many local variables'
 # pylint: disable=R0914
 @tasks.oqtask
-def compute_ses(job_id, sources, ses, src_seeds):
+def compute_ses(job_id, sources, site_coll, ses, src_seeds):
     """
     Celery task for the stochastic event set calculator.
 
@@ -94,6 +94,8 @@ def compute_ses(job_id, sources, ses, src_seeds):
         sets and ground motion fields from the sources
     """
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
+    lt_rlz = ses.ses_collection.lt_realization
+    rup_filter = filters.rupture_site_distance_filter(hc.maximum_distance)
 
     # complete_logic_tree_ses flag
     cmplt_lt_ses = None
@@ -101,25 +103,6 @@ def compute_ses(job_id, sources, ses, src_seeds):
         cmplt_lt_ses = models.SES.objects.get(
             ses_collection__output__oq_job=job_id,
             ordinal=None)
-
-    #ltp = logictree.LogicTreeProcessor(hc.id)
-    lt_rlz = ses.ses_collection.lt_realization
-
-    #apply_uncertainties = ltp.parse_source_model_logictree_path(
-    #    lt_rlz.sm_lt_path)
-
-    #src_filter = filters.source_site_distance_filter(hc.maximum_distance)
-    #rup_filter = filters.rupture_site_distance_filter(hc.maximum_distance)
-
-    #with EnginePerformanceMonitor(
-    #        'reading site collection', job_id, compute_ses):
-    #    site_collection = hc.site_collection
-
-    #with EnginePerformanceMonitor(
-    #        'reading sources', job_id, compute_ses):
-    #    sources = list(haz_general.gen_sources(
-    #        src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
-    #        hc.width_of_mfd_bin, hc.area_source_discretization))
 
     # Compute and save stochastic event sets
     # For each rupture generated, we can optionally calculate a GMF
@@ -131,7 +114,8 @@ def compute_ses(job_id, sources, ses, src_seeds):
             # then make copies of the hazardlib ruptures (which may contain
             # duplicates): the copy is needed to keep the tags distinct
             rupts = map(copy.copy, stochastic.stochastic_event_set_poissonian(
-                        [src], hc.investigation_time))
+                        [src], hc.investigation_time, site_coll,
+                        rupture_site_filter=rup_filter))
             # set the tag for each copy
             for i, r in enumerate(rupts):
                 r.tag = 'rlz=%02d|ses=%04d|src=%s|i=%03d' % (
@@ -393,15 +377,18 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                     sources = haz_general.gen_sources(
                         src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
                         hc.width_of_mfd_bin, hc.area_source_discretization)
-                    filtered_sources = [
-                        source for source, _sites
-                        in src_filter((source, hc.site_collection)
-                                      for source in sources)]
+                    src_list = []
+                    site_list = []
+                    for source, sites in src_filter((s, hc.site_collection)
+                                                    for s in sources):
+                        src_list.append(source)
+                        site_list.extend(sites)
                 for ses in all_ses:
                     # compute seeds for the sources
                     src_seeds = [rnd.randint(0, models.MAX_SINT_32)
-                                 for _ in filtered_sources]
-                    yield self.job.id, filtered_sources, ses, src_seeds
+                                 for _ in src_list]
+                    yield (self.job.id, src_list,
+                           models.SiteCollection(site_list), ses, src_seeds)
 
     def compute_gmf_arg_gen(self):
         """
