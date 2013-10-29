@@ -158,15 +158,27 @@ def _save_ses_ruptures(ses, ruptures, complete_logic_tree_ses):
 
 
 @tasks.oqtask
-def compute_gmf(job_id, params, imt, gsims, ses, site_coll,
-                rupture_ids, rupture_seeds):
+def compute_gmf(job_id, rupture_ids, rupture_seeds, params, imt, gsims,
+                ses, site_coll):
     """
     Compute and save the GMFs for all the ruptures in a SES.
     """
     imt = haz_general.imt_to_hazardlib(imt)
+    rup_filter = filters.rupture_site_distance_filter(
+        params['maximum_distance'])
+
     with EnginePerformanceMonitor(
             'reading ruptures', job_id, compute_gmf):
         ruptures = list(models.SESRupture.objects.filter(pk__in=rupture_ids))
+
+    with EnginePerformanceMonitor(
+            'filtering ruptures', job_id, compute_gmf):
+        # get the ruptures in the SES within the maximum distance
+        ruptures = []
+        for r in models.SESRupture.objects.filter(ses=ses):
+            if list(rup_filter([(r.rupture, site_coll)])):
+                ruptures.append(r)
+
     with EnginePerformanceMonitor(
             'computing gmfs', job_id, compute_gmf):
         gmvs_per_site, ruptures_per_site = _compute_gmf(
@@ -358,7 +370,6 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                 hc.maximum_distance)
 
             with self.monitor('reading sources'):
-
                 all_src_ids = models.SourceProgress.objects\
                     .filter(is_complete=False, lt_realization=lt_rlz)\
                     .order_by('id')\
@@ -394,8 +405,6 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
         site_coll = self.hc.site_collection
-        rup_filter = filters.rupture_site_distance_filter(
-            self.hc.maximum_distance)
         params = dict(
             correl_model=haz_general.get_correl_model(self.hc),
             truncation_level=self.hc.truncation_level,
@@ -407,13 +416,13 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                 ses_collection__lt_realization=lt_rlz,
                 ordinal__isnull=False).order_by('ordinal')
             for ses in all_ses:
-                # get the ruptures in the SES within the maximum distance
-                rupture_ids = []
-                for r in models.SESRupture.objects.filter(ses=ses):
-                    rup_sites = list(rup_filter([(r.rupture, site_coll)]))
-                    if rup_sites:
-                        rupture_ids.append(r.id)
-
+                # get all the ruptures for the given SES; some may be outside
+                # the maximum distance but they will be filtered on the workers
+                # NB: it is best to send to the workers more ruptures
+                # than needed and filter them in parallel rather
+                # than make the master slow (MS)
+                rupture_ids = models.SESRupture.objects.filter(
+                    ses=ses).values_list('id', flat=True)
                 # compute the associated seeds
                 rupture_seeds = [rnd.randint(0, models.MAX_SINT_32)
                                  for _ in range(len(rupture_ids))]
@@ -423,16 +432,16 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                         # we split on sites to avoid running out of memory
                         # on the workers for computations like the full Japan
                         for sites in block_splitter(site_coll, BLOCK_SIZE):
-                            yield (self.job.id, params, imt, gsims, ses,
-                                   models.SiteCollection(sites),
-                                   rupture_ids, rupture_seeds)
+                            yield (self.job.id, rupture_ids, rupture_seeds,
+                                   params, imt, gsims, ses,
+                                   models.SiteCollection(sites))
                     else:
                         # we split on ruptures to avoid running out of memory
                         rupt_iter = block_splitter(rupture_ids, BLOCK_SIZE)
                         seed_iter = block_splitter(rupture_seeds, BLOCK_SIZE)
                         for rupts, seeds in zip(rupt_iter, seed_iter):
-                            yield (self.job.id, params, imt, gsims, ses,
-                                   site_coll, rupts, seeds)
+                            yield (self.job.id, rupts, seeds, params, imt,
+                                   gsims, ses, site_coll)
 
     def execute(self):
         """
