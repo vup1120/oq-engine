@@ -69,7 +69,7 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 # Disabling pylint for 'Too many local variables'
 # pylint: disable=R0914
 @tasks.oqtask
-def compute_ses(job_id, src_ids, ses, src_seeds):
+def compute_ses(job_id, sources, ses, src_seeds):
     """
     Celery task for the stochastic event set calculator.
 
@@ -84,8 +84,8 @@ def compute_ses(job_id, src_ids, ses, src_seeds):
 
     :param int job_id:
         ID of the currently running job.
-    :param src_ids:
-        List of ids of parsed source models from which we will generate
+    :param sources:
+        List of filtered sources from which we will generate
         stochastic event sets/ruptures.
     :param ses:
         Stochastic Event Set object
@@ -102,24 +102,24 @@ def compute_ses(job_id, src_ids, ses, src_seeds):
             ses_collection__output__oq_job=job_id,
             ordinal=None)
 
-    ltp = logictree.LogicTreeProcessor(hc.id)
+    #ltp = logictree.LogicTreeProcessor(hc.id)
     lt_rlz = ses.ses_collection.lt_realization
 
-    apply_uncertainties = ltp.parse_source_model_logictree_path(
-        lt_rlz.sm_lt_path)
+    #apply_uncertainties = ltp.parse_source_model_logictree_path(
+    #    lt_rlz.sm_lt_path)
 
-    src_filter = filters.source_site_distance_filter(hc.maximum_distance)
-    rup_filter = filters.rupture_site_distance_filter(hc.maximum_distance)
+    #src_filter = filters.source_site_distance_filter(hc.maximum_distance)
+    #rup_filter = filters.rupture_site_distance_filter(hc.maximum_distance)
 
-    with EnginePerformanceMonitor(
-            'reading site collection', job_id, compute_ses):
-        site_collection = hc.site_collection
+    #with EnginePerformanceMonitor(
+    #        'reading site collection', job_id, compute_ses):
+    #    site_collection = hc.site_collection
 
-    with EnginePerformanceMonitor(
-            'reading sources', job_id, compute_ses):
-        sources = list(haz_general.gen_sources(
-            src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
-            hc.width_of_mfd_bin, hc.area_source_discretization))
+    #with EnginePerformanceMonitor(
+    #        'reading sources', job_id, compute_ses):
+    #    sources = list(haz_general.gen_sources(
+    #        src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
+    #        hc.width_of_mfd_bin, hc.area_source_discretization))
 
     # Compute and save stochastic event sets
     # For each rupture generated, we can optionally calculate a GMF
@@ -131,8 +131,7 @@ def compute_ses(job_id, src_ids, ses, src_seeds):
             # then make copies of the hazardlib ruptures (which may contain
             # duplicates): the copy is needed to keep the tags distinct
             rupts = map(copy.copy, stochastic.stochastic_event_set_poissonian(
-                        [src], hc.investigation_time, site_collection,
-                        src_filter, rup_filter))
+                        [src], hc.investigation_time))
             # set the tag for each copy
             for i, r in enumerate(rupts):
                 r.tag = 'rlz=%02d|ses=%04d|src=%s|i=%03d' % (
@@ -369,21 +368,40 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         realizations = self._get_realizations()
 
         for lt_rlz in realizations:
-            sources = models.SourceProgress.objects\
-                .filter(is_complete=False, lt_realization=lt_rlz)\
-                .order_by('id')\
-                .values_list('parsed_source_id', flat=True)
+            ltp = logictree.LogicTreeProcessor(hc.id)
+            apply_uncertainties = ltp.parse_source_model_logictree_path(
+                lt_rlz.sm_lt_path)
+
+            src_filter = filters.source_site_distance_filter(
+                hc.maximum_distance)
+
+            with self.monitor('reading sources'):
+
+                all_src_ids = models.SourceProgress.objects\
+                    .filter(is_complete=False, lt_realization=lt_rlz)\
+                    .order_by('id')\
+                    .values_list('parsed_source_id', flat=True)
 
             all_ses = list(models.SES.objects.filter(
                            ses_collection__lt_realization=lt_rlz,
                            ordinal__isnull=False).order_by('ordinal'))
 
-            for src_ids in block_splitter(sources, self.preferred_block_size):
+            for src_ids in block_splitter(
+                    all_src_ids, self.preferred_block_size):
+
+                with self.monitor('filtering sources'):
+                    sources = haz_general.gen_sources(
+                        src_ids, apply_uncertainties, hc.rupture_mesh_spacing,
+                        hc.width_of_mfd_bin, hc.area_source_discretization)
+                    filtered_sources = [
+                        source for source, _sites
+                        in src_filter((source, hc.site_collection)
+                                      for source in sources)]
                 for ses in all_ses:
                     # compute seeds for the sources
                     src_seeds = [rnd.randint(0, models.MAX_SINT_32)
-                                 for _ in src_ids]
-                    yield self.job.id, src_ids, ses, src_seeds
+                                 for _ in filtered_sources]
+                    yield self.job.id, filtered_sources, ses, src_seeds
 
     def compute_gmf_arg_gen(self):
         """
