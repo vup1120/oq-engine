@@ -69,7 +69,7 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 # Disabling pylint for 'Too many local variables'
 # pylint: disable=R0914
 @tasks.oqtask
-def compute_ses(job_id, sources, ses, src_seeds):
+def compute_ses(job_id, sources, lt_rlz, src_seeds):
     """
     Celery task for the stochastic event set calculator.
 
@@ -87,14 +87,13 @@ def compute_ses(job_id, sources, ses, src_seeds):
     :param sources:
         List of filtered sources from which we will generate
         stochastic event sets/ruptures.
-    :param ses:
-        Stochastic Event Set object
+    :param lt_rlz:
+        Realization object
     :param int src_seeds:
         Values for seeding numpy/scipy in the computation of stochastic event
         sets and ground motion fields from the sources
     """
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
-    lt_rlz = ses.ses_collection.lt_realization
 
     # complete_logic_tree_ses flag
     cmplt_lt_ses = None
@@ -103,27 +102,36 @@ def compute_ses(job_id, sources, ses, src_seeds):
             ses_collection__output__oq_job=job_id,
             ordinal=None)
 
+    all_ses = list(models.SES.objects.filter(
+                   ses_collection__lt_realization=lt_rlz,
+                   ordinal__isnull=False).order_by('ordinal'))
+
+    rnd = random.Random()
+
     # Compute and save stochastic event sets
     # For each rupture generated, we can optionally calculate a GMF
     with EnginePerformanceMonitor('computing ses', job_id, compute_ses):
-        ruptures = []
         for src_seed, src in zip(src_seeds, sources):
             # first set the seed for the specific source
-            numpy.random.seed(src_seed)
-            # then make copies of the hazardlib ruptures (which may contain
-            # duplicates): the copy is needed to keep the tags distinct
-            rupts = map(copy.copy, stochastic.stochastic_event_set_poissonian(
+            rnd.seed(src_seed)
+            for ses in all_ses:
+                # then set the seed for the specific SES
+                numpy.random.seed(rnd.randint(0, models.MAX_SINT_32))
+                # then make copies of the hazardlib ruptures (which may contain
+                # duplicates): the copy is needed to keep the tags distinct
+                rupts = map(
+                    copy.copy,
+                    stochastic.stochastic_event_set_poissonian(
                         [src], hc.investigation_time))
-            # set the tag for each copy
-            for i, r in enumerate(rupts):
-                r.tag = 'rlz=%02d|ses=%04d|src=%s|i=%03d' % (
-                    lt_rlz.ordinal, ses.ordinal, src.source_id, i)
-            ruptures.extend(rupts)
-        if not ruptures:
-            return
+                # set the tag for each copy
+                for i, r in enumerate(rupts):
+                    r.tag = 'rlz=%02d|ses=%04d|src=%s|i=%03d' % (
+                        lt_rlz.ordinal, ses.ordinal, src.source_id, i)
+            if not rupts:
+                continue
 
-    with EnginePerformanceMonitor('saving ses', job_id, compute_ses):
-        _save_ses_ruptures(ses, ruptures, cmplt_lt_ses)
+            with EnginePerformanceMonitor('saving ses', job_id, compute_ses):
+                _save_ses_ruptures(ses, rupts, cmplt_lt_ses)
 
 compute_ses.ignore_result = False  # essential
 
@@ -353,7 +361,7 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         """
         Loop through realizations and sources to generate a sequence of
         task arg tuples. Each tuple of args applies to a single task.
-        Yielded results are tuples of the form job_id, src_ids, ses, seeds
+        Yielded results are tuples of the form job_id, src_ids, lt_rlz, seeds
         (seeds will be used to seed numpy for temporal occurence sampling).
         """
         hc = self.hc
@@ -375,10 +383,6 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                     .order_by('id')\
                     .values_list('parsed_source_id', flat=True)
 
-            all_ses = list(models.SES.objects.filter(
-                           ses_collection__lt_realization=lt_rlz,
-                           ordinal__isnull=False).order_by('ordinal'))
-
             for src_ids in block_splitter(
                     all_src_ids, self.preferred_block_size):
 
@@ -390,11 +394,11 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
                                 (s, hc.site_collection) for s in sources)]
                 if not src_list:
                     continue
-                for ses in all_ses:
-                    # compute seeds for the sources
-                    src_seeds = [rnd.randint(0, models.MAX_SINT_32)
-                                 for _ in src_list]
-                    yield (self.job.id, src_list, ses, src_seeds)
+
+                # compute seeds for the sources
+                src_seeds = [rnd.randint(0, models.MAX_SINT_32)
+                             for _ in src_list]
+                yield self.job.id, src_list, lt_rlz, src_seeds
 
     def compute_gmf_arg_gen(self):
         """
