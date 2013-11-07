@@ -158,15 +158,13 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         # Parse risk models.
         self.parse_risk_models()
 
-        # Create source Inputs.
-        self.initialize_sources()
-
         # Deal with the site model and compute site data for the calculation
         # If no site model file was specified, reference parameters are used
         # for all sites.
         self.initialize_site_model()
 
-        self.progress['total'] = len(self.hc.site_collection)
+        # Create rupture input
+        self.initialize_sources()
 
         # create a record in the output table
         output = models.Output.objects.create(
