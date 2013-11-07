@@ -28,8 +28,7 @@ from openquake.hazardlib.calc import ground_motion_fields
 import openquake.hazardlib.gsim
 
 from openquake.engine.calculators.hazard import general as haz_general
-from openquake.engine.calculators import base
-from openquake.engine.utils import tasks, stats
+from openquake.engine.utils import tasks
 from openquake.engine.db import models
 from openquake.engine.input import source
 from openquake.engine import writer
@@ -43,18 +42,7 @@ AVAILABLE_GSIMS = openquake.hazardlib.gsim.get_available_gsims()
 
 
 @tasks.oqtask
-@stats.count_progress('h')
-def gmfs(job_id, sites, rupture, gmf_id, task_seed, realizations):
-    """
-    A celery task wrapper function around :func:`compute_gmfs`.
-    See :func:`compute_gmfs` for parameter definitions.
-    """
-    numpy.random.seed(task_seed)
-    compute_gmfs(job_id, sites, rupture, gmf_id, realizations)
-    base.signal_task_complete(job_id=job_id, num_items=len(sites))
-
-
-def compute_gmfs(job_id, sites, rupture, gmf_id, realizations):
+def compute_gmfs(job_id, sites, rupture, gmf_id, task_seed, realizations):
     """
     Compute ground motion fields and store them in the db.
 
@@ -67,22 +55,27 @@ def compute_gmfs(job_id, sites, rupture, gmf_id, realizations):
         ground motion fields.
     :param gmf_id:
         the id of a :class:`openquake.engine.db.models.Gmf` record
+    :param task_seed:
+        The task seed
     :param realizations:
         Number of realizations to create.
     """
+    numpy.random.seed(task_seed)
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     imts = [haz_general.imt_to_hazardlib(x)
             for x in hc.intensity_measure_types]
     gsim = AVAILABLE_GSIMS[hc.gsim]()  # instantiate the GSIM class
     correlation_model = haz_general.get_correl_model(hc)
 
-    with EnginePerformanceMonitor('computing gmfs', job_id, gmfs):
+    with EnginePerformanceMonitor('computing gmfs', job_id, compute_gmfs):
         gmf = ground_motion_fields(
             rupture, sites, imts, gsim,
             hc.truncation_level, realizations=realizations,
             correlation_model=correlation_model)
-    with EnginePerformanceMonitor('saving gmfs', job_id, gmfs):
+    with EnginePerformanceMonitor('saving gmfs', job_id, compute_gmfs):
         save_gmf(gmf_id, gmf, sites)
+
+compute_gmfs.ignore_result = False  # essential
 
 
 @transaction.commit_on_success(using='reslt_writer')
@@ -133,7 +126,7 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
     Scenario hazard calculator. Computes ground motion fields.
     """
 
-    core_calc_task = gmfs
+    core_calc_task = compute_gmfs
     output = None  # defined in pre_execute
 
     def __init__(self, *args, **kwargs):
@@ -182,6 +175,9 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         # create an associated gmf record
         self.gmf = models.Gmf.objects.create(output=output)
 
+    def execute(self):
+        self.parallelize(self.core_calc_task, self.task_arg_gen(BLOCK_SIZE))
+
     def task_arg_gen(self, block_size, _check_num_task=True):
         """
         Loop through realizations and sources to generate a sequence of
@@ -196,7 +192,7 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         """
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
-        for sites in block_splitter(self.hc.site_collection, BLOCK_SIZE):
+        for sites in block_splitter(self.hc.site_collection, block_size):
             task_seed = rnd.randint(0, models.MAX_SINT_32)
             yield (self.job.id, models.SiteCollection(sites),
                    self.rupture, self.gmf.id, task_seed,
