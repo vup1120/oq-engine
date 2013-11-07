@@ -17,10 +17,17 @@
 """
 Scenario calculator core functionality. It works by splitting the
 computation for blocks of realizations. The number of realizations
-typically is in the range 10^3 - 10^5: therefore a block size of 100
-generates 10-1000 tasks which is a reasonable amount.
+typically is in the range 10^3 - 10^5: therefore a block size of 1000
+generates 1-100 tasks which is a reasonable amount.
+Notice that is MUCH more efficient to use a large block size
+when calling `openquake.hazardlib.calc.ground_motion_fields`:
+this goes against parallelism, though.
 """
+
+import math
 import random
+import itertools
+
 from django.db import transaction
 import numpy
 
@@ -35,10 +42,12 @@ from openquake.engine.utils import tasks
 from openquake.engine.db import models
 from openquake.engine.input import source
 from openquake.engine import writer
-from openquake.engine.utils.general import block_splitter
 from openquake.engine.performance import EnginePerformanceMonitor
 
-BLOCK_SIZE = 100  # for the moment hard-coded, seems to be fine
+BLOCK_SIZE = 1000  # this is hard-coded, not a configuration parameter
+# if it was a user-accessible parameter, users will get different
+# numbers by tweaking it, since the same job would generated a
+# different number of seeds
 
 AVAILABLE_GSIMS = openquake.hazardlib.gsim.get_available_gsims()
 
@@ -58,27 +67,20 @@ def compute_gmfs(job_id, task_seeds, rupture, gmf_id):
     :param gmf_id:
         the id of a :class:`openquake.engine.db.models.Gmf` record
     """
+    assert len(task_seeds) == 1, (
+        'There must be only one seed, got %s' % task_seeds)
+    numpy.random.seed(task_seeds[0])
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     imts = [haz_general.imt_to_hazardlib(x)
             for x in hc.intensity_measure_types]
     gsim = AVAILABLE_GSIMS[hc.gsim]()  # instantiate the GSIM class
     correlation_model = haz_general.get_correl_model(hc)
-    site_indexes = range(len(hc.site_collection))
 
     with EnginePerformanceMonitor('computing gmfs', job_id, compute_gmfs):
-        # build a dictionary associating to each IMT a list of nsites
-        # lists, each one one of size len(seeds)
-        gmf_dict = dict((imt, [[] for _ in site_indexes])
-                        for imt in imts)
-        for seed in task_seeds:
-            numpy.random.seed(seed)
-            gmf = ground_motion_fields(
-                rupture, hc.site_collection, imts, gsim,
-                hc.truncation_level, realizations=1,
-                correlation_model=correlation_model)
-            for imt in gmf:
-                for i in site_indexes:
-                    gmf_dict[imt][i].append(float(gmf[imt][i]))
+        gmf_dict = ground_motion_fields(
+            rupture, hc.site_collection, imts, gsim,
+            hc.truncation_level, realizations=BLOCK_SIZE,
+            correlation_model=correlation_model)
     with EnginePerformanceMonitor('saving gmfs', job_id, compute_gmfs):
         save_gmf(gmf_id, gmf_dict, hc.site_collection)
 
@@ -108,8 +110,11 @@ def save_gmf(gmf_id, gmf_dict, sites):
             sa_period = imt.period
             sa_damping = imt.damping
         imt_name = imt.__class__.__name__
-
-        for i, site in enumerate(sites):
+        for values, site in itertools.izip(gmvs, sites):
+            # convert the numpy array to list of floats
+            if values.shape == (1, BLOCK_SIZE):
+                values = values.reshape(BLOCK_SIZE, 1)
+            data = map(float, values)
             inserter.add(models.GmfData(
                 gmf_id=gmf_id,
                 ses_id=None,
@@ -118,7 +123,7 @@ def save_gmf(gmf_id, gmf_dict, sites):
                 sa_damping=sa_damping,
                 site_id=site.id,
                 rupture_ids=None,
-                gmvs=gmvs[i]))
+                gmvs=data))
 
     inserter.flush()
 
@@ -178,7 +183,7 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
     def execute(self):
         self.parallelize(self.core_calc_task, self.task_arg_gen(BLOCK_SIZE))
 
-    def task_arg_gen(self, block_size, _check_num_task=True):
+    def task_arg_gen(self, block_size):
         """
         Loop through realizations and sources to generate a sequence of
         task arg tuples. Each tuple of args applies to a single task.
@@ -189,6 +194,9 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
         n_gmf = self.hc.number_of_ground_motion_fields
-        all_seeds = [rnd.randint(0, models.MAX_SINT_32) for _ in range(n_gmf)]
-        for seeds in block_splitter(all_seeds, block_size):
-            yield self.job.id, seeds, self.rupture, self.gmf.id
+        n_tasks = int(math.ceil(float(n_gmf) / block_size))
+        seeds = [rnd.randint(0, models.MAX_SINT_32) for _ in range(n_tasks)]
+        for seed in seeds:
+            # the oqtask decorator wants the second argument of a task to be
+            # a list, this is why we are sending a single argument list
+            yield self.job.id, [seed], self.rupture, self.gmf.id
