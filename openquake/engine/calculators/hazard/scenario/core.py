@@ -15,7 +15,10 @@
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Scenario calculator core functionality
+Scenario calculator core functionality. It works by splitting the
+computation for blocks of realizations. The number of realizations
+typically is in the range 10^3 - 10^5: therefore a block size of 100
+generates 10-1000 tasks which is a reasonable amount.
 """
 import random
 from django.db import transaction
@@ -35,45 +38,49 @@ from openquake.engine import writer
 from openquake.engine.utils.general import block_splitter
 from openquake.engine.performance import EnginePerformanceMonitor
 
-
-BLOCK_SIZE = 1000  # TODO: decide where to put this parameter
+BLOCK_SIZE = 100  # for the moment hard-coded, seems to be fine
 
 AVAILABLE_GSIMS = openquake.hazardlib.gsim.get_available_gsims()
 
 
 @tasks.oqtask
-def compute_gmfs(job_id, sites, rupture, gmf_id, task_seed, realizations):
+def compute_gmfs(job_id, task_seeds, rupture, gmf_id):
     """
     Compute ground motion fields and store them in the db.
 
     :param job_id:
         ID of the currently running job.
-    :param sites:
-        The subset of the full SiteCollection scanned by this task
+    :param task_seeds:
+        The seeds to generate each realization
     :param rupture:
         The hazardlib rupture from which we will generate
         ground motion fields.
     :param gmf_id:
         the id of a :class:`openquake.engine.db.models.Gmf` record
-    :param task_seed:
-        The task seed
-    :param realizations:
-        Number of realizations to create.
     """
-    numpy.random.seed(task_seed)
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     imts = [haz_general.imt_to_hazardlib(x)
             for x in hc.intensity_measure_types]
     gsim = AVAILABLE_GSIMS[hc.gsim]()  # instantiate the GSIM class
     correlation_model = haz_general.get_correl_model(hc)
+    site_indexes = range(len(hc.site_collection))
 
     with EnginePerformanceMonitor('computing gmfs', job_id, compute_gmfs):
-        gmf = ground_motion_fields(
-            rupture, sites, imts, gsim,
-            hc.truncation_level, realizations=realizations,
-            correlation_model=correlation_model)
+        # build a dictionary associating to each IMT a list of nsites
+        # lists, each one one of size len(seeds)
+        gmf_dict = dict((imt, [[] for _ in site_indexes])
+                        for imt in imts)
+        for seed in task_seeds:
+            numpy.random.seed(seed)
+            gmf = ground_motion_fields(
+                rupture, hc.site_collection, imts, gsim,
+                hc.truncation_level, realizations=1,
+                correlation_model=correlation_model)
+            for imt in gmf:
+                for i in site_indexes:
+                    gmf_dict[imt][i].append(float(gmf[imt][i]))
     with EnginePerformanceMonitor('saving gmfs', job_id, compute_gmfs):
-        save_gmf(gmf_id, gmf, sites)
+        save_gmf(gmf_id, gmf_dict, hc.site_collection)
 
 compute_gmfs.ignore_result = False  # essential
 
@@ -94,12 +101,7 @@ def save_gmf(gmf_id, gmf_dict, sites):
     inserter = writer.CacheInserter(models.GmfData, 100)
     # NB: GmfData may contain large arrays and the cache may become large
 
-    for imt, gmfs_ in gmf_dict.iteritems():
-        # ``gmfs`` comes in as a numpy.matrix
-        # we want it is an array; it handles subscripting
-        # in the way that we want
-        gmfarray = numpy.array(gmfs_)
-
+    for imt, gmvs in gmf_dict.iteritems():
         sa_period = None
         sa_damping = None
         if isinstance(imt, openquake.hazardlib.imt.SA):
@@ -116,7 +118,7 @@ def save_gmf(gmf_id, gmf_dict, sites):
                 sa_damping=sa_damping,
                 site_id=site.id,
                 rupture_ids=None,
-                gmvs=gmfarray[i].tolist()))
+                gmvs=gmvs[i]))
 
     inserter.flush()
 
@@ -183,17 +185,12 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         Loop through realizations and sources to generate a sequence of
         task arg tuples. Each tuple of args applies to a single task.
 
-        Yielded results are 6-uples of the form (job_id,
-        sites, rupture_id, gmf_id, task_seed, realizations)
-        (task_seed will be used to seed numpy for temporal occurence sampling).
-
-        :param int block_size:
-            The number of work items for each task. Fixed to 1.
+        Yielded results are 4-uples of the form job_id, seeds, rupture, gmf_id.
+        The seeds will be used to seed numpy for temporal occurence sampling.
         """
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
-        for sites in block_splitter(self.hc.site_collection, block_size):
-            task_seed = rnd.randint(0, models.MAX_SINT_32)
-            yield (self.job.id, models.SiteCollection(sites),
-                   self.rupture, self.gmf.id, task_seed,
-                   self.hc.number_of_ground_motion_fields)
+        n_gmf = self.hc.number_of_ground_motion_fields
+        all_seeds = [rnd.randint(0, models.MAX_SINT_32) for _ in range(n_gmf)]
+        for seeds in block_splitter(all_seeds, block_size):
+            yield self.job.id, seeds, self.rupture, self.gmf.id
