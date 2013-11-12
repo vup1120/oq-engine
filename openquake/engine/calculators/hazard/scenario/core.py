@@ -84,8 +84,6 @@ def compute_gmfs(job_id, task_seeds, rupture, gmf_id):
     with EnginePerformanceMonitor('saving gmfs', job_id, compute_gmfs):
         save_gmf(gmf_id, gmf_dict, hc.site_collection)
 
-compute_gmfs.ignore_result = False  # essential
-
 
 @transaction.commit_on_success(using='reslt_writer')
 def save_gmf(gmf_id, gmf_dict, sites):
