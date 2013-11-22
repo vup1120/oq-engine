@@ -23,8 +23,7 @@ import numpy
 from django import db
 
 from openquake.risklib import workflows
-from openquake.engine.calculators.risk import (
-    base, hazard_getters, validation, writers)
+from openquake.engine.risk import base, hazard_getters, validation, writers
 from openquake.engine.db import models
 from openquake.engine.performance import EnginePerformanceMonitor
 from openquake.engine.utils import tasks

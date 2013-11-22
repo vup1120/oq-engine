@@ -28,9 +28,8 @@ from django import db
 from openquake.hazardlib.geo import mesh
 from openquake.risklib import scientific, workflows
 
-from openquake.engine.calculators import post_processing
-from openquake.engine.calculators.risk import (
-    base, hazard_getters, validation, writers)
+from openquake.engine import post_processing
+from openquake.engine.risk import base, hazard_getters, validation, writers
 from openquake.engine.db import models
 from openquake.engine import logs, writer
 from openquake.engine.input import logictree
@@ -113,7 +112,7 @@ def save_individual_outputs(containers, outputs, disagg_outputs, params):
     calculation unit
 
     :param containers:
-        a :class:`openquake.engine.calculators.risk.writers.OutputDict`
+        a :class:`openquake.engine.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param outputs:
         a :class:`openquake.risklib.workflows.ProbabilisticEventBased.Output`
@@ -122,7 +121,7 @@ def save_individual_outputs(containers, outputs, disagg_outputs, params):
         a :class:`.DisaggregationOutputs` holding the disaggreation
         output data for a calculation unit
     :param params:
-        a :class:`openquake.engine.calculators.risk.base.CalcParams`
+        a :class:`openquake.engine.risk.base.CalcParams`
         holding the parameters for this calculation
     """
 
@@ -166,13 +165,13 @@ def save_statistical_output(containers, stats, params):
     quantile loss maps) for the calculation.
 
     :param containers:
-        a :class:`openquake.engine.calculators.risk.writers.OutputDict`
+        a :class:`openquake.engine.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param stats:
         :class:`openquake.risklib.workflows.ProbabilisticEventBased.StatisticalOutput`
         holding the statistical output data
     :param params:
-        a :class:`openquake.engine.calculators.risk.base.CalcParams`
+        a :class:`openquake.engine.risk.base.CalcParams`
         holding the parameters for this calculation
     """
 
@@ -260,11 +259,10 @@ def disaggregate(outputs, rupture_ids, params):
         if asset.site in params.sites_disagg:
             disagg_matrix.extend(list(disaggregate_site(asset.site, losses)))
 
-            # FIXME. the functions in
-            # openquake.engine.calculators.risk.writers requires an
-            # asset per each row in the disaggregation matrix. To this
-            # aim, we repeat the assets that will be passed to such
-            # functions
+            # FIXME. the functions in openquake.engine.risk.writers
+            # requires an asset per each row in the disaggregation
+            # matrix. To this aim, we repeat the assets that will be
+            # passed to such functions
             assets_disagg = itertools.chain(
                 assets_disagg,
                 itertools.repeat(asset, len(rupture_ids)))

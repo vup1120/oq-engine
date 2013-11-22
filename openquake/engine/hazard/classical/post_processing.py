@@ -27,7 +27,7 @@ from django.db import transaction
 from itertools import izip
 
 from openquake.engine import logs
-from openquake.engine.calculators.hazard.general import CURVE_CACHE_SIZE
+from openquake.engine.hazard.general import CURVE_CACHE_SIZE
 from openquake.engine.db import models
 from openquake.engine.utils import tasks
 from openquake.engine.writer import CacheInserter

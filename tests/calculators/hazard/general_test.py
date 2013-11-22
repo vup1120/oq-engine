@@ -24,7 +24,7 @@ from collections import namedtuple
 from openquake.hazardlib import geo as hazardlib_geo
 
 from openquake.engine import engine
-from openquake.engine.calculators.hazard import general
+from openquake.engine.hazard import general
 from openquake.engine.utils import get_calculator_class
 from openquake.engine.db import models
 
@@ -245,7 +245,7 @@ class ClosestSiteModelTestCase(unittest.TestCase):
 class ImtsToHazardlibTestCase(unittest.TestCase):
     """
     Tests for
-    :func:`openquake.engine.calculators.hazard.general.im_dict_to_hazardlib`.
+    :func:`openquake.engine.hazard.general.im_dict_to_hazardlib`.
     """
 
     def test_im_dict_to_hazardlib(self):
@@ -299,7 +299,7 @@ class ParseRiskModelsTestCase(unittest.TestCase):
         job.is_running = True
         job.save()
 
-        base_path = ('openquake.engine.calculators.hazard.classical.core'
+        base_path = ('openquake.engine.hazard.classical.core'
                      '.ClassicalHazardCalculator')
         init_src_patch = helpers.patch(
             '%s.%s' % (base_path, 'initialize_sources'))
@@ -345,7 +345,7 @@ class TaskArgGenTestCase(unittest.TestCase):
         job = self.Job(1776, mock.Mock())
 
         base_path = (
-            'openquake.engine.calculators.hazard.general.BaseHazardCalculator'
+            'openquake.engine.hazard.general.BaseHazardCalculator'
         )
         calc = general.BaseHazardCalculator(job)
 

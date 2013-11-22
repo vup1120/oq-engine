@@ -22,8 +22,8 @@ import numpy
 
 from nose.plugins.attrib import attr
 
-from openquake.engine.calculators.hazard.classical import core as cls_core
-from openquake.engine.calculators.hazard.scenario import core as scen_core
+from openquake.engine.hazard.classical import core as cls_core
+from openquake.engine.hazard.scenario import core as scen_core
 from openquake.engine.db import models
 
 from tests.utils import helpers

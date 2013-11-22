@@ -21,9 +21,8 @@ import unittest
 from nose.plugins.attrib import attr
 
 from openquake.engine import engine
-from openquake.engine.calculators.hazard.disaggregation \
-    import core as disagg_core
-from openquake.engine.calculators.hazard.classical import core as cls_core
+from openquake.engine.hazard.disaggregation import core as disagg_core
+from openquake.engine.hazard.classical import core as cls_core
 from openquake.engine.db import models
 
 from tests.utils import helpers
@@ -42,7 +41,7 @@ class DisaggHazardCalculatorTestcase(unittest.TestCase):
         return job, calc
 
     def test_pre_execute(self):
-        base_path = ('openquake.engine.calculators.hazard.disaggregation.core'
+        base_path = ('openquake.engine.hazard.disaggregation.core'
                      '.DisaggHazardCalculator')
         init_src_patch = helpers.patch(
             '%s.%s' % (base_path, 'initialize_sources'))
@@ -79,7 +78,7 @@ class DisaggHazardCalculatorTestcase(unittest.TestCase):
 
         diss1, diss2, diss3, diss4 = list(self.calc.disagg_task_arg_gen(1))
 
-        base_path = 'openquake.engine.calculators.hazard.disaggregation.core'
+        base_path = 'openquake.engine.hazard.disaggregation.core'
 
         disagg_calc_func = (
             'openquake.hazardlib.calc.disagg.disaggregation_poissonian'

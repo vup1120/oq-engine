@@ -27,8 +27,7 @@ import warnings
 from openquake.engine.db import models
 from django.core import exceptions
 
-from openquake.engine import engine
-from openquake.engine.calculators import base
+from openquake.engine import engine, base
 
 from tests.utils import helpers
 

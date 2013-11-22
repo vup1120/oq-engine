@@ -27,10 +27,9 @@ import openquake.hazardlib.site
 import numpy
 
 # FIXME: one must import the engine before django to set DJANGO_SETTINGS_MODULE
-from openquake.engine.db import models
+from openquake.engine.db import models, writer
 
 from django.db import transaction, connections
-from django.db.models import Sum
 from shapely import geometry
 
 from openquake.hazardlib import correlation
@@ -38,19 +37,14 @@ from openquake.hazardlib import geo as hazardlib_geo
 from openquake.nrmllib import parsers as nrml_parsers
 from openquake.nrmllib.risk import parsers
 
-from openquake.engine.input import exposure
+from openquake.engine.db.writers import exposure, logictree, source
 from openquake.engine import logs
-from openquake.engine import writer
-from openquake.engine.calculators import base
-from openquake.engine.calculators.post_processing import mean_curve
-from openquake.engine.calculators.post_processing import quantile_curve
-from openquake.engine.calculators.post_processing import (
-    weighted_quantile_curve
-)
+from openquake.engine import base
+from openquake.engine.post_processing import (mean_curve,
+                                              quantile_curve,
+                                              weighted_quantile_curve)
 from openquake.engine.export import core as export_core
 from openquake.engine.export import hazard as hazard_export
-from openquake.engine.input import logictree
-from openquake.engine.input import source
 from openquake.engine.utils import config
 from openquake.engine.utils.general import block_splitter
 from openquake.engine.performance import EnginePerformanceMonitor
@@ -746,7 +740,7 @@ class BaseHazardCalculator(base.Calculator):
     def _do_export(self, output_id, export_dir, export_type):
         """
         Hazard-specific implementation of
-        :meth:`openquake.engine.calculators.base.Calculator._do_export`.
+        :meth:`openquake.engine.base.Calculator._do_export`.
 
         Calls the hazard exporter.
         """

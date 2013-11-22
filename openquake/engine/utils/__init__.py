@@ -73,7 +73,7 @@ def get_calculator_class(job_type, calc_mode):
     :returns: a Calculator class
     """
     assert job_type in ("hazard", "risk"), job_type
-    pkg = importlib.import_module('openquake.engine.calculators.%s' % job_type)
+    pkg = importlib.import_module('openquake.engine.%s' % job_type)
     return get_available_calculators(pkg)[calc_mode]
 
 

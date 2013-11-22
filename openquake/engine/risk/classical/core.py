@@ -23,9 +23,8 @@ from openquake.risklib import workflows
 from django.db import transaction
 
 from openquake.engine.performance import EnginePerformanceMonitor
-from openquake.engine.calculators import post_processing
-from openquake.engine.calculators.risk import (
-    base, hazard_getters, validation, writers)
+from openquake.engine import post_processing
+from openquake.engine.risk import base, hazard_getters, validation, writers
 from openquake.engine.utils import tasks
 
 
@@ -94,13 +93,13 @@ def save_individual_outputs(containers, outs, params):
     calculation unit
 
     :param containers:
-        a :class:`openquake.engine.calculators.risk.writers.OutputDict`
+        a :class:`openquake.engine.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param outs:
         a :class:`openquake.risklib.workflows.Classical.Output`
         holding the output data for a calculation unit
     :param params:
-        a :class:`openquake.engine.calculators.risk.base.CalcParams`
+        a :class:`openquake.engine.risk.base.CalcParams`
         holding the parameters for this calculation
     """
 
@@ -136,13 +135,13 @@ def save_statistical_output(containers, stats, params):
     calculation.
 
     :param containers:
-        a :class:`openquake.engine.calculators.risk.writers.OutputDict`
+        a :class:`openquake.engine.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param outs:
         a :class:`openquake.risklib.workflows.Classical.StatisticalOutput`
         holding the statistical output data
     :param params:
-        a :class:`openquake.engine.calculators.risk.base.CalcParams`
+        a :class:`openquake.engine.risk.base.CalcParams`
         holding the parameters for this calculation
     """
 

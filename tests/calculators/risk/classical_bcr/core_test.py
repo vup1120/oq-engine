@@ -18,8 +18,7 @@ from tests.utils import helpers
 from tests.utils.helpers import get_data_path
 
 from openquake.engine.db import models
-from openquake.engine.calculators.risk.classical_bcr import (
-    core as classical_bcr)
+from openquake.engine.risk.classical_bcr import core as classical_bcr
 
 
 class ClassicalBCRRiskCalculatorTestCase(base_test.BaseRiskCalculatorTestCase):

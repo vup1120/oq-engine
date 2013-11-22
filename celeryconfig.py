@@ -35,7 +35,7 @@ if os.environ.get("OQ_ENGINE_USE_SRCDIR"):
         0, os.path.join(os.path.dirname(__file__), "openquake"))
 
 from openquake.engine.utils import config, get_core_modules
-from openquake.engine.calculators import hazard, risk
+from openquake.engine import hazard, risk
 
 config.abort_if_no_config_available()
 

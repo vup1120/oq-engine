@@ -22,9 +22,8 @@ import openquake.hazardlib.calc
 import openquake.hazardlib.imt
 
 from openquake.engine import logs
-from openquake.engine.calculators.hazard import general as haz_general
-from openquake.engine.calculators.hazard.classical import (
-    post_processing as post_proc)
+from openquake.engine.hazard import general as haz_general
+from openquake.engine.hazard.classical import post_processing as post_proc
 from openquake.engine.db import models
 from openquake.engine.utils import tasks as utils_tasks
 from openquake.engine.performance import EnginePerformanceMonitor
@@ -237,7 +236,7 @@ class ClassicalHazardCalculator(haz_general.BaseHazardCalculator):
         """
         Post-execution actions. At the moment, all we do is finalize the hazard
         curve results. See
-        :meth:`openquake.engine.calculators.hazard.general.\
+        :meth:`openquake.engine.hazard.general.
 BaseHazardCalculator.finalize_hazard_curves`
         for more info.
         """

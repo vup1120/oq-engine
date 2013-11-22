@@ -45,8 +45,7 @@ from openquake.hazardlib import geo as hazardlib_geo
 from openquake.hazardlib import source as hazardlib_source
 import openquake.hazardlib.site
 
-from openquake.engine.db import fields
-from openquake.engine import writer
+from openquake.engine.db import fields, writer
 
 
 #: Default Spectral Acceleration damping. At the moment, this is not

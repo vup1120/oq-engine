@@ -28,8 +28,8 @@ from openquake.hazardlib.source.rupture import ProbabilisticRupture
 from openquake.hazardlib.correlation import JB2009CorrelationModel
 
 from openquake.engine.db import models
-from openquake.engine.calculators.risk import hazard_getters
-from openquake.engine.calculators.risk.base import RiskCalculator
+from openquake.engine.risk import hazard_getters
+from openquake.engine.risk.base import RiskCalculator
 
 from tests.utils.helpers import get_data_path
 

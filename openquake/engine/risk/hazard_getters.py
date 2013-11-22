@@ -36,7 +36,7 @@ from openquake.hazardlib.calc.gmf import ground_motion_field_with_residuals
 from openquake.engine import logs
 from openquake.engine.db import models
 from openquake.engine.performance import DummyMonitor, LightMonitor
-from openquake.engine.calculators.hazard import general
+from openquake.engine.hazard import general
 from openquake.engine.input import logictree
 
 #: Scaling constant do adapt to the postgis functions (that work with

@@ -27,7 +27,7 @@ from openquake.nrmllib.hazard.parsers import RuptureModelParser
 from openquake.hazardlib.calc import ground_motion_fields
 import openquake.hazardlib.gsim
 
-from openquake.engine.calculators.hazard import general as haz_general
+from openquake.engine.hazard import general as haz_general
 from openquake.engine.utils import tasks
 from openquake.engine.db import models
 from openquake.engine.input import source

@@ -3,8 +3,8 @@ import unittest
 import mock
 
 from openquake.nrmllib.risk import parsers
-from openquake.engine.calculators.risk.scenario_damage.core import \
-    ScenarioDamageRiskCalculator
+from openquake.engine.risk.scenario_damage.core import (
+    ScenarioDamageRiskCalculator)
 
 FRAGILITY_FILE = StringIO('''<?xml version='1.0' encoding='utf-8'?>
 <nrml xmlns="http://openquake.org/xmlns/nrml/0.4">

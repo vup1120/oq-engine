@@ -9,7 +9,7 @@ from django.db import connections
 
 from openquake.engine import logs
 from openquake.engine.db import models
-from openquake.engine.writer import CacheInserter
+from openquake.engine.db.writer import CacheInserter
 
 
 # this is not thread-safe

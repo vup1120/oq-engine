@@ -18,7 +18,7 @@ from tests.utils.helpers import get_data_path
 from tests.calculators.risk import base_test
 
 from openquake.engine.db import models
-from openquake.engine.calculators.risk.event_based import core as event_based
+from openquake.engine.risk.event_based import core as event_based
 
 
 class EventBasedRiskCalculatorTestCase(base_test.BaseRiskCalculatorTestCase):
@@ -49,7 +49,7 @@ class EventBasedRiskCalculatorTestCase(base_test.BaseRiskCalculatorTestCase):
         # Test that the celery task when called properly call the
         # specific method to write loss curves
 
-        base_path = 'openquake.engine.calculators.risk.writers'
+        base_path = 'openquake.engine.risk.writers'
         patches = [
             helpers.patch('%s.loss_curve' % base_path),
             helpers.patch('%s.event_loss_curve' % base_path)]

@@ -18,7 +18,7 @@ import unittest
 
 import StringIO
 
-from openquake.engine.calculators.risk import loaders
+from openquake.engine.risk import loaders
 
 
 class ParseVulnerabilityModelTestCase(unittest.TestCase):

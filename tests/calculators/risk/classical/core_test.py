@@ -17,7 +17,7 @@
 from tests.utils import helpers
 from tests.calculators.risk import base_test
 
-from openquake.engine.calculators.risk.classical import core as classical
+from openquake.engine.risk.classical import core as classical
 from openquake.engine.db import models
 
 
@@ -36,8 +36,7 @@ class ClassicalRiskCalculatorTestCase(base_test.BaseRiskCalculatorTestCase):
         self.job.status = 'executing'
         self.job.save()
 
-        patch = helpers.patch(
-            'openquake.engine.calculators.risk.writers.loss_curve')
+        patch = helpers.patch('openquake.engine.risk.writers.loss_curve')
 
         try:
             mocked_writer = patch.start()

@@ -20,7 +20,7 @@
 import unittest
 import mock
 
-from openquake.engine.calculators.risk import validation
+from openquake.engine.risk import validation
 from openquake.engine.db import models
 
 

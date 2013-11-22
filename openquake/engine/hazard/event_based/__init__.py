@@ -121,8 +121,7 @@ Hazard curves are computed from GMFs as follows:
   `intensity_measure_types_and_levels`), `investigation_time`, and "duration"
   (computed as `investigation_time` * `ses_per_logic_tree_path`), we compute
   the PoEs (Probabilities of Exceedance). See
-  :func:`openquake.engine.calculators.hazard.event_based.\
-post_processing.gmvs_to_haz_curve`
+  :func:`openquake.engine.hazard.event_based.post_processing.gmvs_to_haz_curve`
   for implementation details.
 * The PoEs make up the "ordinates" (y-axis values) of the produced hazard
   curve. The IMLs define the "abscissae" (x-axis values).

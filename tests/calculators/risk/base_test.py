@@ -18,7 +18,7 @@ import mock
 
 from tests.utils import helpers
 from tests.utils.helpers import get_data_path
-from openquake.engine.calculators.risk import base
+from openquake.engine.risk import base
 from openquake.engine.db import models
 
 

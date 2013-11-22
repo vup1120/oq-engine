@@ -46,10 +46,9 @@ from openquake.hazardlib.calc import stochastic
 
 from openquake.engine import writer, logs
 from openquake.engine.utils.general import block_splitter
-from openquake.engine.calculators.hazard import general as haz_general
-from openquake.engine.calculators.hazard.classical import (
-    post_processing as cls_post_proc)
-from openquake.engine.calculators.hazard.event_based import post_processing
+from openquake.engine.hazard import general as haz_general
+from openquake.engine.hazard.classical import post_processing as cls_post_proc
+from openquake.engine.hazard.event_based import post_processing
 from openquake.engine.db import models
 from openquake.engine.input import logictree
 from openquake.engine.utils import tasks

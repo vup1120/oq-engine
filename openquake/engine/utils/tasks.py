@@ -27,7 +27,7 @@ from celery.task import task
 from openquake.engine import logs, no_distribute
 from openquake.engine.db import models
 from openquake.engine.utils import config
-from openquake.engine.writer import CacheInserter
+from openquake.engine.db.writer import CacheInserter
 from openquake.engine.performance import EnginePerformanceMonitor
 
 

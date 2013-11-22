@@ -18,7 +18,7 @@ from tests.utils.helpers import get_data_path
 from tests.calculators.risk import base_test
 
 from openquake.engine.db import models
-from openquake.engine.calculators.risk.scenario import core as scenario
+from openquake.engine.risk.scenario import core as scenario
 
 
 class ScenarioRiskCalculatorTestCase(base_test.BaseRiskCalculatorTestCase):
@@ -45,7 +45,7 @@ class ScenarioRiskCalculatorTestCase(base_test.BaseRiskCalculatorTestCase):
         # specific method to write loss map data.
 
         patch_dbwriter = helpers.patch(
-            'openquake.engine.calculators.risk.writers.loss_map',)
+            'openquake.engine.risk.writers.loss_map',)
         try:
             write_lossmap_mock = patch_dbwriter.start()
             scenario.scenario(

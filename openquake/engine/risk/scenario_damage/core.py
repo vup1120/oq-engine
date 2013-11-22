@@ -26,7 +26,7 @@ from django import db
 
 from openquake.risklib import workflows, calculators
 
-from openquake.engine.calculators.risk import (
+from openquake.engine.risk import (
     base, hazard_getters, writers, validation, loaders)
 from openquake.engine.performance import EnginePerformanceMonitor
 from openquake.engine.utils import tasks

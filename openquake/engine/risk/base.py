@@ -22,8 +22,8 @@ import collections
 from openquake.engine import logs, export
 from openquake.engine.utils import config
 from openquake.engine.db import models
-from openquake.engine.calculators import base
-from openquake.engine.calculators.risk import writers, validation, loaders
+from openquake.engine import base
+from openquake.engine.risk import writers, validation, loaders
 
 
 class RiskCalculator(base.Calculator):
@@ -41,7 +41,7 @@ class RiskCalculator(base.Calculator):
         A nested dict taxonomy -> loss type -> instances of `RiskModel`.
     """
 
-    # a list of :class:`openquake.engine.calculators.risk.validation` classes
+    # a list of :class:`openquake.engine.risk.validation` classes
     validators = [validation.HazardIMT, validation.EmptyExposure,
                   validation.OrphanTaxonomies, validation.ExposureLossTypes,
                   validation.NoRiskModels]
@@ -169,7 +169,7 @@ class RiskCalculator(base.Calculator):
     def _do_export(self, output_id, export_dir, export_type):
         """
         Risk-specific implementation of
-        :meth:`openquake.engine.calculators.base.Calculator._do_export`.
+        :meth:`openquake.engine.base.Calculator._do_export`.
 
         Calls the risk exporter.
         """

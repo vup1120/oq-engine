@@ -23,8 +23,8 @@ from django.db import transaction
 
 import openquake.hazardlib
 from openquake.engine import logs
-from openquake.engine.calculators.hazard import general as haz_general
-from openquake.engine.calculators.hazard.classical import core
+from openquake.engine.hazard import general as haz_general
+from openquake.engine.hazard.classical import core
 from openquake.engine.db import models
 from openquake.engine.input import logictree
 from openquake.engine.utils import general as general_utils
@@ -37,7 +37,7 @@ def compute_hazard_curves_task(job_id, src_ids, lt_rlz_id, ltp):
     """
     Task wrapper around
 
-    :func:`openquake.engine.calculators.hazard.classical.core.compute_hazard_curves`.
+    :func:`openquake.engine.hazard.classical.core.compute_hazard_curves`.
     """
     core.compute_hazard_curves(job_id, src_ids, lt_rlz_id, ltp)
 
@@ -46,7 +46,7 @@ def compute_hazard_curves_task(job_id, src_ids, lt_rlz_id, ltp):
 def disagg_task(job_id, sites, lt_rlz_id, ltp):
     """
     Task wrapper around
-    :func:`openquake.engine.calculators.hazard.disaggregation.core.compute_disagg`.
+    :func:`openquake.engine.hazard.disaggregation.core.compute_disagg`.
     """
     compute_disagg(job_id, sites, lt_rlz_id, ltp)
 

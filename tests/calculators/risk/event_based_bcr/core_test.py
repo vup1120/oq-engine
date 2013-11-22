@@ -18,7 +18,7 @@ from tests.utils import helpers
 from tests.utils.helpers import get_data_path
 
 from openquake.engine.db import models
-from openquake.engine.calculators.risk.event_based_bcr import core
+from openquake.engine.risk.event_based_bcr import core
 
 
 class EventBasedBCRRiskCalculatorTestCase(
