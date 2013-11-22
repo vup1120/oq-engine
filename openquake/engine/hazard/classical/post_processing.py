@@ -30,7 +30,7 @@ from openquake.engine import logs
 from openquake.engine.hazard.general import CURVE_CACHE_SIZE
 from openquake.engine.db import models
 from openquake.engine.utils import tasks
-from openquake.engine.writer import CacheInserter
+from openquake.engine.db.writer import CacheInserter
 
 
 # Number of locations considered by each task

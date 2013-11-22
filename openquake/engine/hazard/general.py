@@ -37,7 +37,7 @@ from openquake.hazardlib import geo as hazardlib_geo
 from openquake.nrmllib import parsers as nrml_parsers
 from openquake.nrmllib.risk import parsers
 
-from openquake.engine.db.writers import exposure, logictree, source
+from openquake.engine.input import exposure, logictree, source
 from openquake.engine import logs
 from openquake.engine import base
 from openquake.engine.post_processing import (mean_curve,

@@ -29,9 +29,8 @@ import openquake.hazardlib.gsim
 
 from openquake.engine.hazard import general as haz_general
 from openquake.engine.utils import tasks
-from openquake.engine.db import models
+from openquake.engine.db import models, writer
 from openquake.engine.input import source
-from openquake.engine import writer
 from openquake.engine.utils.general import block_splitter
 from openquake.engine.performance import EnginePerformanceMonitor
 

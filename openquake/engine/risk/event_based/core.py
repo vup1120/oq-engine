@@ -30,8 +30,8 @@ from openquake.risklib import scientific, workflows
 
 from openquake.engine import post_processing
 from openquake.engine.risk import base, hazard_getters, validation, writers
-from openquake.engine.db import models
-from openquake.engine import logs, writer
+from openquake.engine.db import models, writer
+from openquake.engine import logs
 from openquake.engine.input import logictree
 from openquake.engine.performance import EnginePerformanceMonitor
 from openquake.engine.utils import tasks

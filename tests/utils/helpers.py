@@ -47,7 +47,7 @@ from openquake.engine.db import models
 from openquake.engine import engine
 from openquake.engine import logs
 from openquake.engine.utils import config, get_calculator_class
-from openquake.engine.job.validation import validate
+from openquake.engine.validation import validate
 
 
 CD = os.path.dirname(__file__)  # current directory

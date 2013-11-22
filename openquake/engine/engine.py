@@ -37,14 +37,12 @@ from lxml import etree
 
 from openquake.engine import logs
 from openquake.engine.db import models
-from openquake.engine.job.validation import validate
+from openquake.engine.validation import validate
 from openquake.engine.utils import (
     config, monitor, get_calculator_class, general)
-from openquake.engine.writer import CacheInserter
+from openquake.engine.db.writer import CacheInserter
 from openquake.engine.settings import DATABASES
-from openquake.engine.db.models import JobStats
-from openquake.engine.db.models import OqJob
-from openquake.engine.db.models import Performance
+from openquake.engine.db.models import JobStats, OqJob, Performance
 
 from openquake import hazardlib
 from openquake import risklib
