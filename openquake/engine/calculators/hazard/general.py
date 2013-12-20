@@ -350,9 +350,7 @@ class BaseHazardCalculator(base.Calculator):
         if site_model_inp:
             store_site_model(self.job, site_model_inp)
 
-    # Silencing 'Too many local variables'
-    # pylint: disable=R0914
-    @transaction.commit_on_success(using='job_init')
+    @EnginePerformanceMonitor.monitor
     def initialize_realizations(self):
         """
         Create records for the `hzrdr.lt_realization`.
@@ -371,6 +369,7 @@ class BaseHazardCalculator(base.Calculator):
             # full paths enumeration
             self._initialize_realizations_enumeration()
 
+    @transaction.commit_on_success(using='job_init')
     def _initialize_realizations_enumeration(self):
         """
         Perform full paths enumeration of logic trees and populate
@@ -388,6 +387,7 @@ class BaseHazardCalculator(base.Calculator):
                 sm_lt_path=sm_lt_path,
                 gsim_lt_path=gsim_lt_path)
 
+    @transaction.commit_on_success(using='job_init')
     def _initialize_realizations_montecarlo(self):
         """
         Perform random sampling of both logic trees and populate lt_realization

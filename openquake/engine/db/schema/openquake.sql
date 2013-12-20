@@ -423,7 +423,8 @@ CREATE TABLE hzrdr.ses_rupture (
 
     rupture BYTEA NOT NULL DEFAULT 'not computed',
     tag VARCHAR,
-    magnitude float NOT NULL
+    magnitude float NOT NULL,
+    site_indices INTEGER[]
 ) TABLESPACE hzrdr_ts;
 SELECT AddGeometryColumn('hzrdr', 'ses_rupture', 'hypocenter', 4326, 'POINT', 2);
 

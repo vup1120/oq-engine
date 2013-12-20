@@ -1591,7 +1591,7 @@ class SESRupture(djm.Model):
     #: :class:`openquake.hazardlib.source.rupture.ProbabilisticRupture`
     #: instance
     rupture = fields.PickleField()
-
+    site_indices = fields.IntArrayField(null=True)
     magnitude = djm.FloatField(null=True)
     hypocenter = djm.PointField(srid=DEFAULT_SRID)
 

@@ -87,6 +87,13 @@ def compute_ses(job_id, src_seeds, ses_coll):
         an instance of :class:`openquake.engine.db.models.SESCollection`
     """
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
+    kwargs = dict(sites=hc.site_collection, time_span=hc.investigation_time)
+    if hc.maximum_distance:
+        kwargs['source_site_filter'] = filters.source_site_distance_filter(
+            hc.maximum_distance)
+        kwargs['rupture_site_filter'] = filters.rupture_site_distance_filter(
+            hc.maximum_distance)
+
     rnd = random.Random()
     all_ses = models.SES.objects.filter(ses_collection=ses_coll)
 
@@ -95,10 +102,10 @@ def compute_ses(job_id, src_seeds, ses_coll):
         ruptures = []
         for src, seed in src_seeds:
             rnd.seed(seed)
+            kwargs['sources'] = [src]
             for ses in all_ses:
                 numpy.random.seed(rnd.randint(0, models.MAX_SINT_32))
-                rupts = stochastic.stochastic_event_set_poissonian(
-                    [src], hc.investigation_time)
+                rupts = stochastic.stochastic_event_set_poissonian(**kwargs)
                 for i, r in enumerate(rupts):
                     rup = models.SESRupture(
                         ses=ses,
@@ -108,6 +115,7 @@ def compute_ses(job_id, src_seeds, ses_coll):
                             src.source_id, i),
                         hypocenter=r.hypocenter.wkt2d,
                         magnitude=r.mag,
+                        site_indices=r.indices,
                     )
                     ruptures.append(rup)
 
@@ -140,8 +148,7 @@ def compute_gmf(job_id, gmf_coll, gsims, rupture_ids, rupture_seeds, task_no):
     imts = map(from_string, hc.intensity_measure_types)
     params = dict(
         correl_model=general.get_correl_model(hc),
-        truncation_level=hc.truncation_level,
-        maximum_distance=hc.maximum_distance)
+        truncation_level=hc.truncation_level)
 
     with EnginePerformanceMonitor(
             'reading ruptures', job_id, compute_gmf):
@@ -186,16 +193,22 @@ def _compute_gmf(params, imts, gsims, site_coll, ruptures, rupture_seeds):
 
     # Compute and save ground motion fields
     for i, rupture in enumerate(ruptures):
+        if rupture.site_indices is None:  # nothing was filtered away
+            sites = site_coll
+        else:  # only a subset of the site collection is affected by the event
+            affected_by_rupture = numpy.zeros(len(site_coll), bool)
+            for site_index in rupture.site_indices:
+                affected_by_rupture[site_index] = True
+            sites = site_coll.filter(affected_by_rupture)
         gmf_calc_kwargs = {
             'rupture': rupture.rupture,
-            'sites': site_coll,
+            'sites': sites,
+            'total_sites': len(site_coll),
             'imts': imts,
             'gsim': gsims[rupture.rupture.tectonic_region_type],
             'truncation_level': params['truncation_level'],
             'realizations': DEFAULT_GMF_REALIZATIONS,
             'correlation_model': params['correl_model'],
-            'rupture_site_filter': filters.rupture_site_distance_filter(
-                params['maximum_distance']),
         }
         numpy.random.seed(rupture_seeds[i])
         gmf_dict = gmf.ground_motion_fields(**gmf_calc_kwargs)
