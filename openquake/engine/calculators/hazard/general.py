@@ -23,11 +23,9 @@ import math
 import random
 import collections
 
-import numpy
-
 from openquake.hazardlib import correlation
 from openquake.hazardlib.imt import from_string
-
+from openquake.hazardlib.tom import PoissonTOM
 
 # FIXME: one must import the engine before django to set DJANGO_SETTINGS_MODULE
 from openquake.engine.db import models
@@ -48,7 +46,7 @@ from openquake.engine.calculators.post_processing import (
 from openquake.engine.export import core as export_core
 from openquake.engine.export import hazard as hazard_export
 from openquake.engine.input import logictree
-from openquake.engine.utils import config
+from openquake.engine.utils import config, tasks
 from openquake.engine.utils.general import block_splitter
 from openquake.engine.performance import EnginePerformanceMonitor
 
@@ -63,6 +61,24 @@ POES_PARAM_NAME = "POES"
 # Dilation in decimal degrees (http://en.wikipedia.org/wiki/Decimal_degrees)
 # 1e-5 represents the approximate distance of one meter at the equator.
 DILATION_ONE_METER = 1e-5
+
+
+@tasks.oqtask
+def generate_ruptures(job_id, sources):
+    hc = models.HazardCalculation.objects.get(oqjob=job_id)
+    tom = PoissonTOM(hc.investigation_time)
+    rupts = []
+    for src in sources:
+        s_sites = src.filter_sites_by_distance_to_source(
+            hc.maximum_distance, hc.site_collection)
+        if s_sites:
+            for rup in src.iter_ruptures(tom):
+                r_sites = rup.source_typology.\
+                    filter_sites_by_distance_to_rupture(
+                        rup, hc.maximum_distance, hc.site_collection)
+                if r_sites:
+                    rupts.append(rup)
+    return rupts
 
 
 def store_site_model(job, site_model_source):
@@ -211,6 +227,19 @@ class BaseHazardCalculator(base.Calculator):
             # this is normal in tests where everything is mocked
             logs.LOG.warn('Could not save job_stats.num_sources: %s', e)
         self.initialize_realizations()
+
+        self.imtls = self.hc.intensity_measure_types_and_levels
+        self.rlzs_per_ltpath = collections.defaultdict(list)
+        for n_rlz, rlz in enumerate(self._get_realizations(), 1):
+            ltpath = tuple(rlz.sm_lt_path)
+            self.rlzs_per_ltpath[ltpath].append(rlz)
+        n_levels = sum(len(lvls) for lvls in self.imtls.itervalues()
+                       ) / float(len(self.imtls))
+        self.n_sites = len(self.hc.site_collection)
+        total = n_rlz * len(self.imtls) * n_levels * self.n_sites
+        logs.LOG.info('Considering %d realization(s), %d IMT(s), %d level(s) '
+                      'and %d sites, total %d', n_rlz, len(self.imtls),
+                      n_levels, self.n_sites, total)
 
     @EnginePerformanceMonitor.monitor
     def initialize_sources(self):
@@ -407,35 +436,6 @@ class BaseHazardCalculator(base.Calculator):
             # update the seed for the next realization
             seed = rnd.randint(models.MIN_SINT_32, models.MAX_SINT_32)
             rnd.seed(seed)
-
-    def initialize_hazard_curve_progress(self, lt_rlz):
-        """
-        As a calculation progresses, workers will periodically update the
-        intermediate results. These results will be stored in
-        `htemp.hazard_curve_progress` until the calculation is completed.
-
-        Before the core calculation begins, we need to initalize these records,
-        one data set per IMT. Each dataset will be stored in the database as a
-        pickled 2D numpy array (with number of rows == calculation points of
-        interest and number of columns == number of IML values for a given
-        IMT).
-
-        We will create 1 `hazard_curve_progress` record per IMT per
-        realization.
-
-        :param lt_rlz:
-            :class:`openquake.engine.db.models.LtRealization` object to
-            associate with these inital hazard curve values.
-        """
-        num_points = len(self.hc.points_to_compute())
-
-        im_data = self.hc.intensity_measure_types_and_levels
-        for imt, imls in im_data.items():
-            hc_prog = models.HazardCurveProgress()
-            hc_prog.lt_realization = lt_rlz
-            hc_prog.imt = imt
-            hc_prog.result_matrix = numpy.zeros((num_points, len(imls)))
-            hc_prog.save()
 
     def _get_outputs_for_export(self):
         """

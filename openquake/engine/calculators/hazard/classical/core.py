@@ -17,22 +17,20 @@
 Core functionality for the classical PSHA hazard calculator.
 """
 import numpy
-
-import openquake.hazardlib
-import openquake.hazardlib.calc
 from openquake.hazardlib.imt import from_string
 
 from openquake.engine import logs, writer
-from openquake.engine.calculators.hazard import general as haz_general
+from openquake.engine.calculators.hazard import general
 from openquake.engine.calculators.hazard.classical import (
     post_processing as post_proc)
+from openquake.engine.input import logictree
 from openquake.engine.db import models
-from openquake.engine.utils import tasks as utils_tasks
+from openquake.engine.utils import tasks as tasks
 from openquake.engine.performance import EnginePerformanceMonitor
 
 
-@utils_tasks.oqtask
-def compute_hazard_curves(job_id, sources, lt_rlz, ltp):
+@tasks.oqtask
+def generate_curves(job_id, ruptures, lt_rlz, ltp):
     """
     Celery task for hazard curve calculator.
 
@@ -45,8 +43,10 @@ def compute_hazard_curves(job_id, sources, lt_rlz, ltp):
 
     :param int job_id:
         ID of the currently running job.
-    :param sources:
-        List of :class:`openquake.hazardlib.source.base.SeismicSource` objects
+    :param ruptures:
+        List of
+        :class:`openquake.hazardlib.source.rupture.ProbabilisticRupture`
+        objects
     :param lt_rlz:
         a :class:`openquake.engine.db.models.LtRealization` instance
     :param ltp:
@@ -54,35 +54,23 @@ def compute_hazard_curves(job_id, sources, lt_rlz, ltp):
     """
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     gsims = ltp.parse_gmpe_logictree_path(lt_rlz.gsim_lt_path)
-    imts = haz_general.im_dict_to_hazardlib(
-        hc.intensity_measure_types_and_levels)
-
-    # Prepare args for the calculator.
-    calc_kwargs = {'gsims': gsims,
-                   'truncation_level': hc.truncation_level,
-                   'time_span': hc.investigation_time,
-                   'sources': sources,
-                   'imts': imts,
-                   'sites': hc.site_collection}
-
-    if hc.maximum_distance:
-        # NB: (MS) we add a source site filter anyway, even if the sources were
-        # prefiltered, because it makes a LOT of difference: inside
-        # hazard_curves_poissonian there is a loop on the filtered sites
-        # (s_sites) and the rupture filter is applied only over such sites;
-        # look at hazardlib.calc.hazard_curve.hazard_curves_poissonian, line
-        # `for rupture, r_sites in rupture_site_filter(ruptures_sites)`
-        calc_kwargs['source_site_filter'] = (
-            openquake.hazardlib.calc.filters.source_site_distance_filter(
-                hc.maximum_distance))
-        calc_kwargs['rupture_site_filter'] = (
-            openquake.hazardlib.calc.filters.rupture_site_distance_filter(
-                hc.maximum_distance))
-
-    # mapping "imt" to 2d array of hazard curves: first dimension -- sites,
-    # second -- IMLs
-    curves = openquake.hazardlib.calc.hazard_curve.hazard_curves_poissonian(
-        **calc_kwargs)
+    imts = general.im_dict_to_hazardlib(hc.intensity_measure_types_and_levels)
+    sites = hc.site_collection
+    curves = dict((imt, numpy.ones([len(sites), len(imts[imt])]))
+                  for imt in imts)
+    for rupture in ruptures:
+        r_sites = sites
+        prob = rupture.get_probability_one_or_more_occurrences()
+        gsim = gsims[rupture.tectonic_region_type]
+        sctx, rctx, dctx = gsim.make_contexts(r_sites, rupture)
+        for imt in imts:
+            poes = gsim.get_poes(sctx, rctx, dctx, imt, imts[imt],
+                                 hc.truncation_level)
+            curves[imt] *= r_sites.expand(
+                (1 - prob) ** poes, len(sites), placeholder=1
+            )
+    for imt in imts:
+        curves[imt] = 1 - curves[imt]
     curves_by_imt = []
     for imt in sorted(imts):
         if (curves[imt] == 0.0).all():
@@ -92,23 +80,10 @@ def compute_hazard_curves(job_id, sources, lt_rlz, ltp):
             curves_by_imt.append(None)
         else:
             curves_by_imt.append(curves[imt])
-    return curves_by_imt, lt_rlz.ordinal
+    return curves_by_imt
 
 
-def make_zeros(realizations, sites, imtls):
-    """
-    Returns a list of R lists containing I numpy arrays of S * L zeros, where
-    R is the number of realizations, I is the number of intensity measure
-    types, S the number of sites and L the number of intensity measure levels.
-
-    :params sites: the site collection
-    :param imtls: a dictionary of intensity measure types and levels
-    """
-    return [[numpy.zeros((len(sites), len(imtls[imt])))
-             for imt in sorted(imtls)] for _ in range(len(realizations))]
-
-
-class ClassicalHazardCalculator(haz_general.BaseHazardCalculator):
+class ClassicalHazardCalculator(general.BaseHazardCalculator):
     """
     Classical PSHA hazard calculator. Computes hazard curves for a given set of
     points.
@@ -116,33 +91,32 @@ class ClassicalHazardCalculator(haz_general.BaseHazardCalculator):
     For each realization of the calculation, we randomly sample source models
     and GMPEs (Ground Motion Prediction Equations) from logic trees.
     """
-
-    core_calc_task = compute_hazard_curves
-
-    def pre_execute(self):
-        """
-        Do pre-execution work. At the moment, this work entails:
-        parsing and initializing sources, parsing and initializing the
-        site model (if there is one), parsing vulnerability and
-        exposure files and generating logic tree realizations. (The
-        latter piece basically defines the work to be done in the
-        `execute` phase.).
-        """
-        super(ClassicalHazardCalculator, self).pre_execute()
-        imtls = self.hc.intensity_measure_types_and_levels
-        self.curves_by_rlz = make_zeros(
-            self._get_realizations(), self.hc.site_collection, imtls)
-        n_rlz = len(self._get_realizations())
-        n_levels = sum(len(lvls) for lvls in imtls.itervalues()
-                       ) / float(len(imtls))
-        n_sites = len(self.hc.site_collection)
-        total = n_rlz * len(imtls) * n_levels * n_sites
-        logs.LOG.info('Considering %d realization(s), %d IMT(s), %d level(s) '
-                      'and %d sites, total %d', n_rlz, len(imtls), n_levels,
-                      n_sites, total)
+    def execute(self):
+        ltp = logictree.LogicTreeProcessor.from_hc(self.hc)
+        for ltpath, sources in self.sources_per_ltpath.iteritems():
+            task_args = [(self.job.id, srcs)
+                         for srcs in self.block_split(sources)]
+            self.initialize_percent(general.generate_ruptures, task_args)
+            ruptures = tasks.map_reduce(
+                general.generate_ruptures, task_args, self.add_lists, [])
+            zeros = [numpy.zeros((self.n_sites, len(self.imtls[imt])))
+                     for imt in sorted(self.imtls)]
+            for rlz in self.rlzs_per_ltpath[ltpath]:
+                task_args = [(self.job.id, rupts, rlz, ltp)
+                             for rupts in self.block_split(ruptures)]
+                self.initialize_percent(generate_curves, task_args)
+                curves = tasks.map_reduce(
+                    generate_curves, task_args, self.multiply_curves, zeros)
+                self.save_hazard_curves(curves, rlz)
 
     @EnginePerformanceMonitor.monitor
-    def task_completed(self, task_result):
+    def add_lists(self, acc, lst):
+        newacc = acc + lst
+        self.log_percent()
+        return newacc
+
+    @EnginePerformanceMonitor.monitor
+    def multiply_curves(self, acc, curves_by_imt):
         """
         This is used to incrementally update hazard curve results by combining
         an initial value with some new results. (Each set of new results is
@@ -156,73 +130,63 @@ class ClassicalHazardCalculator(haz_general.BaseHazardCalculator):
             shape as self.curves_by_rlz[i][j] where i is the realization
             ordinal and j the IMT ordinal.
         """
-        curves_by_imt, i = task_result
         for j, matrix in enumerate(curves_by_imt):  # j is the IMT index
             if matrix is not None:
-                self.curves_by_rlz[i][j] = 1. - (
-                    1. - self.curves_by_rlz[i][j]) * (1. - matrix)
-        self.log_percent(task_result)
+                acc[j] = 1. - (1. - acc[j]) * (1. - matrix)
+        self.log_percent()
+        return acc
 
     # this could be parallelized in the future, however in all the cases
     # I have seen until now, the serialized approach is fast enough (MS)
     @EnginePerformanceMonitor.monitor
-    def save_hazard_curves(self):
+    def save_hazard_curves(self, curves_imts, rlz):
         """
-        Post-execution actions. At the moment, all we do is finalize the hazard
-        curve results.
+        Save the hazard curve results on the database.
         """
-        imtls = self.hc.intensity_measure_types_and_levels
-        for i, curves_imts in enumerate(self.curves_by_rlz):
-            rlz = models.LtRealization.objects.get(
-                hazard_calculation=self.hc, ordinal=i)
+        # create a new `HazardCurve` 'container' record for each
+        # realization (virtual container for multiple imts)
+        models.HazardCurve.objects.create(
+            output=models.Output.objects.create_output(
+                self.job, "hc-multi-imt-rlz-%s" % rlz.id,
+                "hazard_curve_multi"),
+            lt_realization=rlz,
+            imt=None,
+            investigation_time=self.hc.investigation_time)
 
-            # create a new `HazardCurve` 'container' record for each
-            # realization (virtual container for multiple imts)
-            models.HazardCurve.objects.create(
-                output=models.Output.objects.create_output(
-                    self.job, "hc-multi-imt-rlz-%s" % rlz.id,
-                    "hazard_curve_multi"),
+        # create a new `HazardCurve` 'container' record for each
+        # realization for each intensity measure type
+        for imt, curves_by_imt in zip(sorted(self.imtls), curves_imts):
+            hc_im_type, sa_period, sa_damping = from_string(imt)
+
+            # save output
+            hco = models.Output.objects.create(
+                oq_job=self.job,
+                display_name="Hazard Curve rlz-%s" % rlz.id,
+                output_type='hazard_curve',
+            )
+
+            # save hazard_curve
+            haz_curve = models.HazardCurve.objects.create(
+                output=hco,
                 lt_realization=rlz,
-                imt=None,
-                investigation_time=self.hc.investigation_time)
+                investigation_time=self.hc.investigation_time,
+                imt=hc_im_type,
+                imls=self.imtls[imt],
+                sa_period=sa_period,
+                sa_damping=sa_damping,
+            )
 
-            # create a new `HazardCurve` 'container' record for each
-            # realization for each intensity measure type
-            for imt, curves_by_imt in zip(sorted(imtls), curves_imts):
-                hc_im_type, sa_period, sa_damping = from_string(imt)
-
-                # save output
-                hco = models.Output.objects.create(
-                    oq_job=self.job,
-                    display_name="Hazard Curve rlz-%s" % rlz.id,
-                    output_type='hazard_curve',
-                )
-
-                # save hazard_curve
-                haz_curve = models.HazardCurve.objects.create(
-                    output=hco,
-                    lt_realization=rlz,
-                    investigation_time=self.hc.investigation_time,
-                    imt=hc_im_type,
-                    imls=imtls[imt],
-                    sa_period=sa_period,
-                    sa_damping=sa_damping,
-                )
-
-                # save hazard_curve_data
-                points = self.hc.points_to_compute()
-                logs.LOG.info('saving %d hazard curves for %s, imt=%s',
-                              len(points), hco, imt)
-                writer.CacheInserter.saveall([
-                    models.HazardCurveData(
-                        hazard_curve=haz_curve,
-                        poes=list(poes),
-                        location='POINT(%s %s)' % (p.longitude, p.latitude),
-                        weight=rlz.weight)
-                    for p, poes in zip(points, curves_by_imt)])
-        del self.curves_by_rlz  # save memory for the post_processing phase
-
-    post_execute = save_hazard_curves
+            # save hazard_curve_data
+            points = self.hc.points_to_compute()
+            logs.LOG.info('saving %d hazard curves for %s, imt=%s',
+                          len(points), hco, imt)
+            writer.CacheInserter.saveall([
+                models.HazardCurveData(
+                    hazard_curve=haz_curve,
+                    poes=list(poes),
+                    location='POINT(%s %s)' % (p.longitude, p.latitude),
+                    weight=rlz.weight)
+                for p, poes in zip(points, curves_by_imt)])
 
     def post_process(self):
         """
