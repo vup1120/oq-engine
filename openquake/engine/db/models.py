@@ -377,6 +377,7 @@ class JobStats(djm.Model):
     num_sites = djm.IntegerField(null=True)
     # The disk space occupation in bytes
     disk_space = djm.IntegerField(null=True)
+    num_sources = fields.IntArrayField(null=True)
 
     class Meta:
         db_table = 'uiapi\".\"job_stats'
@@ -1944,7 +1945,7 @@ class GmfData(djm.Model):
     respective geographical locations.
     """
     gmf = djm.ForeignKey('Gmf')
-    ses = djm.ForeignKey('SES', null=True)
+    task_no = djm.IntegerField(null=False)
     imt = djm.TextField(choices=IMT_CHOICES)
     sa_period = djm.FloatField(null=True)
     sa_damping = djm.FloatField(null=True)
@@ -1955,7 +1956,7 @@ class GmfData(djm.Model):
 
     class Meta:
         db_table = 'hzrdr\".\"gmf_data'
-        ordering = ['gmf', 'ses']
+        ordering = ['gmf', 'task_no']
 
 
 def get_gmvs_per_site(output, imt=None, sort=sorted):

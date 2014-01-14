@@ -40,13 +40,15 @@ AVAILABLE_GSIMS = openquake.hazardlib.gsim.get_available_gsims()
 
 
 @tasks.oqtask
-def gmfs(job_id, sites, rupture, gmf_id, task_seed, realizations):
+def gmfs(job_id, sites, rupture, gmf_id, task_seed, realizations, task_no):
     """
     A celery task wrapper function around :func:`compute_gmfs`.
     See :func:`compute_gmfs` for parameter definitions.
     """
     numpy.random.seed(task_seed)
-    compute_gmfs(job_id, sites, rupture, gmf_id, realizations)
+    gmf_dict = compute_gmfs(job_id, sites, rupture, gmf_id, realizations)
+    with EnginePerformanceMonitor('saving gmfs', job_id, gmfs):
+        save_gmf(gmf_id, gmf_dict, sites, task_no)
 
 
 def compute_gmfs(job_id, sites, rupture, gmf_id, realizations):
@@ -71,16 +73,14 @@ def compute_gmfs(job_id, sites, rupture, gmf_id, realizations):
     correlation_model = haz_general.get_correl_model(hc)
 
     with EnginePerformanceMonitor('computing gmfs', job_id, gmfs):
-        gmf = ground_motion_fields(
+        return ground_motion_fields(
             rupture, sites, imts, gsim,
             hc.truncation_level, realizations=realizations,
             correlation_model=correlation_model)
-    with EnginePerformanceMonitor('saving gmfs', job_id, gmfs):
-        save_gmf(gmf_id, gmf, sites)
 
 
 @transaction.commit_on_success(using='job_init')
-def save_gmf(gmf_id, gmf_dict, sites):
+def save_gmf(gmf_id, gmf_dict, sites, task_no):
     """
     Helper method to save computed GMF data to the database.
 
@@ -104,7 +104,7 @@ def save_gmf(gmf_id, gmf_dict, sites):
         for i, site in enumerate(sites):
             inserter.add(models.GmfData(
                 gmf_id=gmf_id,
-                ses_id=None,
+                task_no=task_no,
                 imt=imt_name,
                 sa_period=sa_period,
                 sa_damping=sa_damping,
@@ -146,16 +146,8 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         latter piece basically defines the work to be done in the
         `execute` phase.)
         """
-
-        # Parse risk models.
         self.parse_risk_models()
-
-        # Create source Inputs.
         self.initialize_sources()
-
-        # Deal with the site model and compute site data for the calculation
-        # If no site model file was specified, reference parameters are used
-        # for all sites.
         self.initialize_site_model()
 
         # create a record in the output table
@@ -167,29 +159,27 @@ class ScenarioHazardCalculator(haz_general.BaseHazardCalculator):
         # create an associated gmf record
         self.gmf = models.Gmf.objects.create(output=output)
 
-    def block_size(self):
-        """
-        Block size for the scenario calculator. For the moment hard-coded to
-        1000.
-        """
-        return 1000
+    def _get_realizations(self):
+        return range(self.hc.number_of_ground_motion_fields)
 
-    def task_arg_gen(self, block_size):
+    def task_arg_gen(self):
         """
         Loop through realizations and sources to generate a sequence of
         task arg tuples. Each tuple of args applies to a single task.
 
         Yielded results are 6-uples of the form (job_id,
-        sites, rupture_id, gmf_id, task_seed, realizations)
+        sites, rupture_id, gmf_id, task_seed, realizations, task_no)
         (task_seed will be used to seed numpy for temporal occurence sampling).
-
-        :param int block_size:
-            The number of work items for each task. Fixed to 1000.
         """
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
-        for sites in block_splitter(self.hc.site_collection, block_size):
+        # TODO: fix the block size dependency
+        # (https://bugs.launchpad.net/oq-engine/+bug/1225287)
+        # then self.block_split can be used, consistently with the
+        # other calculators
+        blocks = block_splitter(self.hc.site_collection, 1000)
+        for task_no, sites in enumerate(blocks):
             task_seed = rnd.randint(0, models.MAX_SINT_32)
             yield (self.job.id, models.SiteCollection(sites),
                    self.rupture, self.gmf.id, task_seed,
-                   self.hc.number_of_ground_motion_fields)
+                   self.hc.number_of_ground_motion_fields, task_no)

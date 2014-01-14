@@ -31,9 +31,7 @@ For more information on computing ground motion fields, see
 :mod:`openquake.hazardlib.calc.gmf`.
 """
 
-import math
 import random
-import itertools
 import collections
 
 import numpy.random
@@ -41,12 +39,11 @@ import numpy.random
 from django.db import transaction
 from openquake.hazardlib.calc import filters
 from openquake.hazardlib.calc import gmf
-from openquake.hazardlib.calc import stochastic
+from openquake.hazardlib.tom import PoissonTOM
 from openquake.hazardlib.imt import from_string
 
-from openquake.engine import writer, logs
-from openquake.engine.utils.general import block_splitter
-from openquake.engine.calculators.hazard import general as haz_general
+from openquake.engine import writer
+from openquake.engine.calculators.hazard import general
 from openquake.engine.calculators.hazard.classical import (
     post_processing as cls_post_proc)
 from openquake.engine.calculators.hazard.event_based import post_processing
@@ -60,8 +57,6 @@ from openquake.engine.performance import EnginePerformanceMonitor
 #: hazard calculator.
 DEFAULT_GMF_REALIZATIONS = 1
 
-BLOCK_SIZE = 5000  # TODO: put this in openquake.cfg
-
 # NB: beware of large caches
 inserter = writer.CacheInserter(models.GmfData, 1000)
 
@@ -69,7 +64,7 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 # Disabling pylint for 'Too many local variables'
 # pylint: disable=R0914
 @tasks.oqtask
-def compute_ses(job_id, src_ses_seeds, lt_rlz, ltp):
+def compute_ses(job_id, src_seeds, ses_coll):
     """
     Celery task for the stochastic event set calculator.
 
@@ -84,44 +79,39 @@ def compute_ses(job_id, src_ses_seeds, lt_rlz, ltp):
 
     :param int job_id:
         ID of the currently running job.
-    :param src_ses_seeds:
-        List of triples (src_id, ses, seed)
-        Stochastic Event Set object
-    :param lt_rlz:
-        Logic Tree realization object
-    :param ltp:
-        A :class:`openquake.engine.input.LogicTreeProcessor` instance
+    :param src_seeds:
+        List of pairs (source, seed)
+    :param ses_coll:
+        an instance of :class:`openquake.engine.db.models.SESCollection`
     """
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
-    apply_uncertainties = ltp.parse_source_model_logictree_path(
-        lt_rlz.sm_lt_path)
-
-    source = {}
-    for src, ses, seed in src_ses_seeds:
-        if src.source_id not in source:
-            source[src.source_id] = apply_uncertainties(src)
+    rnd = random.Random()
+    all_ses = models.SES.objects.filter(ses_collection=ses_coll)
+    tom = PoissonTOM(hc.investigation_time)
+    ruptures = []
 
     # Compute and save stochastic event sets
-    # For each rupture generated, we can optionally calculate a GMF
     with EnginePerformanceMonitor('computing ses', job_id, compute_ses):
-        ruptures = []
-        for src, ses, seed in src_ses_seeds:
-            numpy.random.seed(seed)
-            rupts = stochastic.stochastic_event_set_poissonian(
-                [source[src.source_id]], hc.investigation_time)
-            for i, r in enumerate(rupts):
-                rup = models.SESRupture(
-                    ses=ses,
-                    rupture=r,
-                    tag='rlz=%02d|ses=%04d|src=%s|i=%03d' % (
-                        lt_rlz.ordinal, ses.ordinal, src.source_id, i),
-                    hypocenter=r.hypocenter.wkt2d,
-                    magnitude=r.mag,
-                )
-                ruptures.append(rup)
-        if not ruptures:
-            return
-        source.clear()  # save a little memory
+        for src, seed in src_seeds:
+            rnd.seed(seed)
+            rupts = list(src.iter_ruptures(tom))
+            for ses in all_ses:
+                numpy.random.seed(rnd.randint(0, models.MAX_SINT_32))
+                for r in rupts:
+                    for i in xrange(r.sample_number_of_occurrences()):
+                        rup = models.SESRupture(
+                            ses=ses,
+                            rupture=r,
+                            tag='rlz=%02d|ses=%04d|src=%s|i=%03d' % (
+                                ses_coll.lt_realization.ordinal, ses.ordinal,
+                                src.source_id, i),
+                            hypocenter=r.hypocenter.wkt2d,
+                            magnitude=r.mag,
+                        )
+                        ruptures.append(rup)
+
+    if not ruptures:
+        return
 
     with EnginePerformanceMonitor('saving ses', job_id, compute_ses):
         _save_ses_ruptures(ruptures)
@@ -141,27 +131,35 @@ def _save_ses_ruptures(ruptures):
 
 
 @tasks.oqtask
-def compute_gmf(job_id, params, imt, gsims, ses, site_coll,
-                rupture_ids, rupture_seeds):
+def compute_gmf(job_id, gmf_coll, gsims, rupt_seed_pairs, task_no):
     """
-    Compute and save the GMFs for all the ruptures in a SES.
+    Compute and save the GMFs for all the ruptures in the given block.
     """
-    imt = from_string(imt)
+    hc = models.HazardCalculation.objects.get(oqjob=job_id)
+    imts = map(from_string, hc.intensity_measure_types)
+    params = dict(
+        correl_model=general.get_correl_model(hc),
+        truncation_level=hc.truncation_level,
+        maximum_distance=hc.maximum_distance)
+    rupture_ids, rupture_seeds = zip(*rupt_seed_pairs)
+
     with EnginePerformanceMonitor(
             'reading ruptures', job_id, compute_gmf):
         ruptures = list(models.SESRupture.objects.filter(pk__in=rupture_ids))
+
     with EnginePerformanceMonitor(
             'computing gmfs', job_id, compute_gmf):
         gmvs_per_site, ruptures_per_site = _compute_gmf(
-            params, imt, gsims, site_coll, ruptures, rupture_seeds)
+            params, imts, gsims, hc.site_collection, ruptures, rupture_seeds)
 
     with EnginePerformanceMonitor('saving gmfs', job_id, compute_gmf):
-        _save_gmfs(ses, imt, gmvs_per_site, ruptures_per_site, site_coll)
+        _save_gmfs(gmf_coll, gmvs_per_site, ruptures_per_site,
+                   hc.site_collection, task_no)
 
 
 # NB: I tried to return a single dictionary {site_id: [(gmv, rupt_id),...]}
 # but it takes a lot more memory (MS)
-def _compute_gmf(params, imt, gsims, site_coll, ruptures, rupture_seeds):
+def _compute_gmf(params, imts, gsims, site_coll, ruptures, rupture_seeds):
     """
     Compute a ground motion field value for each rupture, for all the
     points affected by that rupture, for the given IMT. Returns a
@@ -172,8 +170,8 @@ def _compute_gmf(params, imt, gsims, site_coll, ruptures, rupture_seeds):
     :param params:
         a dictionary containing the keys
         correl_model, truncation_level, maximum_distance
-    :param imt:
-        a hazardlib IMT instance
+    :param imts:
+        a list of hazardlib intensity measure types
     :param gsims:
         a dictionary {tectonic region type -> GSIM instance}
     :param site_coll:
@@ -191,7 +189,7 @@ def _compute_gmf(params, imt, gsims, site_coll, ruptures, rupture_seeds):
         gmf_calc_kwargs = {
             'rupture': rupture.rupture,
             'sites': site_coll,
-            'imts': [imt],
+            'imts': imts,
             'gsim': gsims[rupture.rupture.tectonic_region_type],
             'truncation_level': params['truncation_level'],
             'realizations': DEFAULT_GMF_REALIZATIONS,
@@ -200,26 +198,25 @@ def _compute_gmf(params, imt, gsims, site_coll, ruptures, rupture_seeds):
                 params['maximum_distance']),
         }
         numpy.random.seed(rupture_seeds[i])
-        # there is a single imt => a single entry in the return dict
-        [gmf_1_realiz] = gmf.ground_motion_fields(**gmf_calc_kwargs).values()
-        # since DEFAULT_GMF_REALIZATIONS is 1, gmf_1_realiz is a matrix
-        # with n_sites rows and 1 column
-        for site, gmv in zip(site_coll, gmf_1_realiz):
-            gmv = float(gmv)  # convert a 1x1 matrix into a float
-            if gmv:  # nonzero contribution to site
-                gmvs_per_site[site.id].append(gmv)
-                ruptures_per_site[site.id].append(rupture.id)
+        gmf_dict = gmf.ground_motion_fields(**gmf_calc_kwargs)
+        for imt, gmf_1_realiz in gmf_dict.iteritems():
+            # since DEFAULT_GMF_REALIZATIONS is 1, gmf_1_realiz is a matrix
+            # with n_sites rows and 1 column
+            for site, gmv in zip(site_coll, gmf_1_realiz):
+                gmv = float(gmv)  # convert a 1x1 matrix into a float
+                if gmv:  # nonzero contribution to site
+                    gmvs_per_site[imt, site.id].append(gmv)
+                    ruptures_per_site[imt, site.id].append(rupture.id)
     return gmvs_per_site, ruptures_per_site
 
 
 @transaction.commit_on_success(using='job_init')
-def _save_gmfs(ses, imt, gmvs_per_site, ruptures_per_site, sites):
+def _save_gmfs(gmf, gmvs_per_site, ruptures_per_site, sites, task_no):
     """
     Helper method to save computed GMF data to the database.
-    :param ses:
-        A :class:`openquake.engine.db.models.SES` instance
-    :param imt:
-        An intensity measure type instance
+
+    :param gmf:
+        The Gmf instance where to save
     :param gmf_per_site:
         The GMFs per rupture
     :param rupture_per_site:
@@ -227,24 +224,24 @@ def _save_gmfs(ses, imt, gmvs_per_site, ruptures_per_site, sites):
     :param sites:
         An :class:`openquake.hazardlib.site.SiteCollection` object,
         representing the sites of interest for a calculation.
+    :param task_no:
+        The ordinal of the task which generated the current GMFs to save
     """
-    gmf_coll = models.Gmf.objects.get(
-        lt_realization=ses.ses_collection.lt_realization)
-    imt_name, sa_period, sa_damping = imt
-    for site_id in gmvs_per_site:
+    for imt, site_id in gmvs_per_site:
+        imt_name, sa_period, sa_damping = imt
         inserter.add(models.GmfData(
-            gmf=gmf_coll,
-            ses_id=ses.id,
+            gmf=gmf,
+            task_no=task_no,
             imt=imt_name,
             sa_period=sa_period,
             sa_damping=sa_damping,
             site_id=site_id,
-            gmvs=gmvs_per_site[site_id],
-            rupture_ids=ruptures_per_site[site_id]))
+            gmvs=gmvs_per_site[imt, site_id],
+            rupture_ids=ruptures_per_site[imt, site_id]))
     inserter.flush()
 
 
-class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
+class EventBasedHazardCalculator(general.BaseHazardCalculator):
     """
     Probabilistic Event-Based hazard calculator. Computes stochastic event sets
     and (optionally) ground motion fields.
@@ -261,74 +258,43 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         hc = self.hc
         rnd = random.Random()
         rnd.seed(hc.random_seed)
-        realizations = self._get_realizations()
+        for lt_rlz in self._get_realizations():
+            path = tuple(lt_rlz.sm_lt_path)
+            sources = self.sources_per_ltpath[path]
+            ses_coll = models.SESCollection.objects.get(lt_realization=lt_rlz)
+            ss = [(src, rnd.randint(0, models.MAX_SINT_32))
+                  for src in sources]  # source, seed pairs
+            for block in self.block_split(ss):
+                yield self.job.id, block, ses_coll
 
-        ltp = logictree.LogicTreeProcessor.from_hc(self.hc)
-        for lt_rlz in realizations:
-            sm = self.rlz_to_sm[lt_rlz]
-            sources = (self.sources_per_model[sm, 'point'] +
-                       self.sources_per_model[sm, 'other'])
-
-            all_ses = list(models.SES.objects.filter(
-                           ses_collection__lt_realization=lt_rlz))
-
-            # source, ses, seed triples
-            sss = [(src, ses, rnd.randint(0, models.MAX_SINT_32))
-                   for src, ses in itertools.product(sources, all_ses)]
-            preferred_block_size = int(
-                math.ceil(float(len(sources) * len(all_ses)) /
-                          self.concurrent_tasks()))
-            logs.LOG.info('Using block size %d', preferred_block_size)
-            for block in block_splitter(sss, preferred_block_size):
-                yield self.job.id, block, lt_rlz, ltp
-
-        # now the dictionary can be cleared to save memory
-        self.sources_per_model.clear()
+        # now the sources_per_ltpath dictionary can be cleared to save memory
+        self.sources_per_ltpath.clear()
 
     def compute_gmf_arg_gen(self):
         """
         Argument generator for the task compute_gmf. For each SES yields a
-        tuple of the form (job_id, params, imt, gsims, ses, site_coll,
-        rupture_ids, rupture_seeds).
+        tuple of the form (job_id, gmf_coll, gsims, rupture_ids, rupture_seeds,
+        task_no).
         """
         rnd = random.Random()
         rnd.seed(self.hc.random_seed)
-        site_coll = self.hc.site_collection
-        params = dict(
-            correl_model=haz_general.get_correl_model(self.hc),
-            truncation_level=self.hc.truncation_level,
-            maximum_distance=self.hc.maximum_distance)
         for lt_rlz in self._get_realizations():
             ltp = logictree.LogicTreeProcessor.from_hc(self.hc)
             gsims = ltp.parse_gmpe_logictree_path(lt_rlz.gsim_lt_path)
-            all_ses = models.SES.objects.filter(
-                ses_collection__lt_realization=lt_rlz,
-                ordinal__isnull=False).order_by('ordinal')
-            for ses in all_ses:
-                # count the ruptures in the given SES
-                rupture_ids = models.SESRupture.objects.filter(
-                    ses=ses).values_list('id', flat=True)
-                if not rupture_ids:
-                    continue
-                # compute the associated seeds
-                rupture_seeds = [rnd.randint(0, models.MAX_SINT_32)
-                                 for _ in range(len(rupture_ids))]
-                # splitting on IMTs to generate more tasks and save memory
-                for imt in self.hc.intensity_measure_types:
-                    if self.hc.ground_motion_correlation_model is None:
-                        # we split on sites to avoid running out of memory
-                        # on the workers for computations like the full Japan
-                        for sites in block_splitter(site_coll, BLOCK_SIZE):
-                            yield (self.job.id, params, imt, gsims, ses,
-                                   models.SiteCollection(sites),
-                                   rupture_ids, rupture_seeds)
-                    else:
-                        # we split on ruptures to avoid running out of memory
-                        rupt_iter = block_splitter(rupture_ids, BLOCK_SIZE)
-                        seed_iter = block_splitter(rupture_seeds, BLOCK_SIZE)
-                        for rupts, seeds in zip(rupt_iter, seed_iter):
-                            yield (self.job.id, params, imt, gsims, ses,
-                                   site_coll, rupts, seeds)
+            ses_coll = models.SESCollection.objects.get(lt_realization=lt_rlz)
+            gmf_coll = models.Gmf.objects.get(
+                lt_realization=ses_coll.lt_realization)
+            rupture_ids = models.SESRupture.objects.filter(
+                ses__ses_collection=ses_coll).values_list('id', flat=True)
+            if not rupture_ids:
+                continue
+            # compute the associated seeds
+            rupture_seed_pairs = [(rid, rnd.randint(0, models.MAX_SINT_32))
+                                  for rid in rupture_ids]
+
+            # we split on ruptures to avoid running out of memory
+            for i, rs_pairs in enumerate(self.block_split(rupture_seed_pairs)):
+                yield self.job.id, gmf_coll, gsims, rs_pairs, i
 
     def post_execute(self):
         """
@@ -384,23 +350,9 @@ class EventBasedHazardCalculator(haz_general.BaseHazardCalculator):
         latter piece basically defines the work to be done in the
         `execute` phase.)
         """
-        # Parse risk models.
-        self.parse_risk_models()
-
-        # Deal with the site model and compute site data for the calculation
-        # If no site model file was specified, reference parameters are used
-        # for all sites.
-        self.initialize_site_model()
-
-        # Parse logic trees and create source Inputs.
-        self.initialize_sources()
-
-        # Now bootstrap the logic tree realizations and related data.
-        # This defines for us the "work" that needs to be done when we reach
-        # the `execute` phase.
-        rlz_callbacks = [self.initialize_ses_db_records]
-
-        self.initialize_realizations(rlz_callbacks=rlz_callbacks)
+        super(EventBasedHazardCalculator, self).pre_execute()
+        for rlz in self._get_realizations():
+            self.initialize_ses_db_records(rlz)
 
     def post_process(self):
         """

@@ -126,8 +126,8 @@ CREATE TABLE uiapi.job_stats (
     stop_time timestamp without time zone,
     -- The number of total sites in the calculation
     num_sites INTEGER,
-    disk_space BIGINT
-    -- The disk space occupation in bytes
+    disk_space BIGINT, -- The disk space occupation in bytes
+    num_sources INTEGER[] -- The number of (filtered) sources per sm_lt_path
 ) TABLESPACE uiapi_ts;
 
 
@@ -438,7 +438,7 @@ CREATE TABLE hzrdr.gmf (
 CREATE TABLE hzrdr.gmf_data (
     id SERIAL PRIMARY KEY,
     gmf_id INTEGER NOT NULL, -- fk -> gmf
-    ses_id INTEGER, -- fk -> ses
+    task_no INTEGER NOT NULL,
     imt VARCHAR NOT NULL,
         CONSTRAINT hazard_curve_imt
         CHECK(imt in ('PGA', 'PGV', 'PGD', 'SA', 'IA', 'RSD', 'MMI')),
@@ -1099,12 +1099,6 @@ ALTER TABLE hzrdr.gmf_data
 ADD CONSTRAINT hzrdr_gmf_data_gmf_fk
 FOREIGN KEY (gmf_id)
 REFERENCES hzrdr.gmf(id)
-ON DELETE CASCADE;
-
-ALTER TABLE hzrdr.gmf_data
-ADD CONSTRAINT hzrdr_gmf_data_ses_fk
-FOREIGN KEY (ses_id)
-REFERENCES hzrdr.ses(id)
 ON DELETE CASCADE;
 
 
