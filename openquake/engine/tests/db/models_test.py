@@ -420,3 +420,68 @@ class LossFractionTestCase(unittest.TestCase):
                          lf.display_value("7, 21", rc))
         self.assertEqual("0.0000,0.5000|0.0000,0.5000",
                          lf.display_value("0.0, 0.0", rc))
+
+
+class OutputDisplayNamesTestCase(unittest.TestCase):
+    def test_hazard_map_1(self):
+        self.check(quantile=None, statistics=None,
+                   output_type_display='hazard map',
+                   ordinal=0, investigation_time=50., poe=0.01,
+                   imt='PGA', sa_period=None, sa_damping=None,
+                   display_name='hazard map | realization = 0 '
+                   '| investigation time = 50.0 '
+                   '| poe = 0.01 | imt = PGA')
+
+    def test_hazard_map_2(self):
+        # how can statistics be None if quantile is not None?
+        # should it be statistics='quantile'?
+        self.check(quantile=0.1, statistics=None,
+                   output_type_display='hazard map',
+                   ordinal=0, investigation_time=50., poe=0.01,
+                   imt='PGA', sa_period=None, sa_damping=None,
+                   display_name='0.1% hazard map | realization = 0 '
+                   '| investigation time = 50.0 '
+                   '| poe = 0.01 | imt = PGA')
+
+    def test_hazard_map_3(self):
+        self.check(quantile=None, statistics='mean',
+                   output_type_display='hazard map',
+                   ordinal=0, investigation_time=50., poe=0.01,
+                   imt='PGA', sa_period=None, sa_damping=None,
+                   display_name='mean hazard map | realization = 0 '
+                   '| investigation time = 50.0 '
+                   '| poe = 0.01 | imt = PGA')
+
+    def test_hazard_map_4(self):
+        self.check(quantile='0.1', statistics='quantile',
+                   output_type_display='hazard map',
+                   ordinal=0, investigation_time=50., poe=0.01,
+                   imt='PGA', sa_period=None, sa_damping=None,
+                   display_name='0.1% quantile hazard map | realization = 0 '
+                   '| investigation time = 50.0 '
+                   '| poe = 0.01 | imt = PGA')
+
+    def test_hazard_map_5(self):
+        self.check(quantile=None, statistics=None,
+                   output_type_display='hazard map',
+                   ordinal=0, investigation_time=50., poe=0.01,
+                   imt='SA', sa_period=0.1, sa_damping=5.0,
+                   display_name='hazard map | realization = 0 '
+                   '| investigation time = 50.0 '
+                   '| poe = 0.01 | imt = SA | '
+                   'sa_period = 0.1 | sa_damping = 5.0')
+
+    def check(self, quantile, statistics, output_type_display, ordinal,
+              investigation_time, poe, imt, sa_period, sa_damping,
+              display_name):
+        hm = mock.Mock(spec=models.HazardMap())
+        hm.quantile = quantile
+        hm.statistics = statistics
+        hm.output.get_output_type_display.return_value = output_type_display
+        hm.lt_realization.ordinal = ordinal
+        hm.investigation_time = investigation_time
+        hm.poe = poe
+        hm.sa_period = sa_period
+        hm.sa_damping = sa_damping
+        hm.imt = imt
+        self.assertEqual(models.create_display_name(hm), display_name)

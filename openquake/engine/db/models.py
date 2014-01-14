@@ -1349,6 +1349,27 @@ class Output(djm.Model):
 
 ## Tables in the 'hzrdr' schema.
 
+def to_str(templ, obj, cond='missing'):
+    if cond == 'missing':
+        cond = obj
+    return (templ % obj) if cond else ''
+
+
+def create_display_name(self):
+    return "".join([
+        to_str("%s%% ", self.quantile),
+        to_str('%s ', self.statistics),
+        self.output.get_output_type_display().lower(),
+        to_str(" | realization = %s", self.lt_realization.ordinal,
+               hasattr(self, 'lt_realization')
+               and hasattr(self.lt_realization, 'ordinal')),
+        " | investigation time = %s" % self.investigation_time,
+        " | poe = %s" % self.poe,
+        " | imt = %s" % self.imt,
+        to_str(" | sa_period = %s", self.sa_period),
+        to_str(" | sa_damping = %s", self.sa_damping),
+        ])
+
 
 class HazardMap(djm.Model):
     '''
@@ -1371,19 +1392,7 @@ class HazardMap(djm.Model):
     lats = fields.FloatArrayField()
     imls = fields.FloatArrayField()
 
-    def create_display_name(self):
-        return "".join((
-            str(self.quantile) + "% " if self.quantile else "",
-            self.statistics + " " if self.statistics else "",
-            self.output.get_output_type_display().lower(),
-            (" | realization = " + str(self.lt_realization.ordinal) if hasattr(
-                self, 'lt_realization') and hasattr(self.lt_realization, 'ordinal') else ""),
-            " | investigation time = " + str(self.investigation_time),
-            " | poe = " + str(self.poe),
-            " | sa_period = " + str(self.sa_period) if self.sa_period else "",
-            " | sa_damping = " + str(
-                self.sa_damping) if self.sa_damping else "",
-            " | imt = " + str(self.imt)))
+    create_display_name = create_display_name
 
     class Meta:
         db_table = 'hzrdr\".\"hazard_map'
