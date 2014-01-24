@@ -171,7 +171,7 @@ class ClassicalHazardCalculator(general.BaseHazardCalculator):
                     # j is the IMT index
                     self.curves_by_rlz[rlz][j] = 1. - (
                         1. - self.curves_by_rlz[rlz][j]) * (1. - curves)
-            self.log_percent()
+        self.log_percent()
 
     # this could be parallelized in the future, however in all the cases
     # I have seen until now, the serialized approach is fast enough (MS)
