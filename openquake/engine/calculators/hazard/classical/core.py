@@ -35,6 +35,42 @@ MAX_RUPTURES = 1000  # if there are more ruptures, spawn a separate task
 
 
 @tasks.oqtask
+def curves_from_ruptures(
+        job_id, ruptures, s_sites, gsims_by_rlz,
+        imtls, maximum_distance, truncation_level, total_sites):
+    """
+    """
+    imts = general.im_dict_to_hazardlib(imtls)
+    curves = dict((rlz, dict((imt, numpy.ones([total_sites, len(imts[imt])]))
+                             for imt in imts)) for rlz in gsims_by_rlz)
+
+    for rupture in ruptures:
+        r_sites = rupture.source_typology.\
+            filter_sites_by_distance_to_rupture(
+                rupture, maximum_distance, s_sites
+            ) if maximum_distance else s_sites
+        if r_sites is None:
+            continue
+        prob = rupture.get_probability_one_or_more_occurrences()
+        for rlz, curv in curves.iteritems():
+            gsim = gsims_by_rlz[rlz][rupture.tectonic_region_type]
+            sctx, rctx, dctx = gsim.make_contexts(r_sites, rupture)
+            for imt in imts:
+                poes = gsim.get_poes(sctx, rctx, dctx, imt, imts[imt],
+                                     truncation_level)
+                curv[imt] *= r_sites.expand(
+                    (1. - prob) ** poes, total_sites, placeholder=1)
+
+    # the 0 here is a shortcut for filtered sources giving no contribution;
+    # this is essential for performance, we want to avoid returning
+    # big arrays of zeros (MS)
+    dic = dict((rlz, [0 if (curv[imt] == 1.0).all() else 1. - curv[imt]
+                      for imt in sorted(imts)])
+               for rlz, curv in curves.iteritems())
+    return dic
+
+
+@tasks.oqtask
 def compute_hazard_curves(job_id, sources, tom, gsims_by_rlz):
     """
     This task computes R2 * I hazard curves (each one is a
@@ -51,12 +87,6 @@ def compute_hazard_curves(job_id, sources, tom, gsims_by_rlz):
     results = []
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     total_sites = len(hc.site_collection)
-    imts = general.im_dict_to_hazardlib(
-        hc.intensity_measure_types_and_levels)
-    curves = dict((rlz, dict((imt, numpy.ones([total_sites, len(imts[imt])]))
-                             for imt in imts))
-                  for rlz in gsims_by_rlz)
-    num_sources = len(sources)
     for source in sources:
         s_sites = source.filter_sites_by_distance_to_source(
             hc.maximum_distance, hc.site_collection
@@ -64,34 +94,21 @@ def compute_hazard_curves(job_id, sources, tom, gsims_by_rlz):
         if s_sites is None:
             continue
         ruptures = list(source.iter_ruptures(tom))
-        if num_sources > 1 and len(ruptures) > MAX_RUPTURES:  # spawn a task
-            results.append(
-                compute_hazard_curves.delay(
-                    job_id, [source], tom, gsims_by_rlz))
+        if not ruptures:
             continue
-        for rupture in ruptures:
-            r_sites = rupture.source_typology.\
-                filter_sites_by_distance_to_rupture(
-                    rupture, hc.maximum_distance, s_sites
-                ) if hc.maximum_distance else s_sites
-            if r_sites is None:
-                continue
-            prob = rupture.get_probability_one_or_more_occurrences()
-            for rlz, curv in curves.iteritems():
-                gsim = gsims_by_rlz[rlz][rupture.tectonic_region_type]
-                sctx, rctx, dctx = gsim.make_contexts(r_sites, rupture)
-                for imt in imts:
-                    poes = gsim.get_poes(sctx, rctx, dctx, imt, imts[imt],
-                                         hc.truncation_level)
-                    curv[imt] *= r_sites.expand(
-                        (1. - prob) ** poes, total_sites, placeholder=1)
-    # the 0 here is a shortcut for filtered sources giving no contribution;
-    # this is essential for performance, we want to avoid returning
-    # big arrays of zeros (MS)
-    dic = dict((rlz, [0 if (curv[imt] == 1.0).all() else 1. - curv[imt]
-                      for imt in sorted(imts)])
-               for rlz, curv in curves.iteritems())
-    results.append(dic)
+        if len(ruptures) > MAX_RUPTURES:  # spawn subtasks
+            for rupts in general.block_splitter(ruptures, MAX_RUPTURES):
+                results.append(
+                    curves_from_ruptures.delay(
+                        job_id, rupts, s_sites, gsims_by_rlz,
+                        hc.intensity_measure_types_and_levels,
+                        hc.maximum_distance, hc.truncation_level, total_sites))
+            continue
+        curves = curves_from_ruptures(
+            job_id, ruptures, s_sites, gsims_by_rlz,
+            hc.intensity_measure_types_and_levels,
+            hc.maximum_distance, hc.truncation_level, total_sites)
+        results.append(curves)
     return results
 
 
@@ -148,12 +165,12 @@ class ClassicalHazardCalculator(general.BaseHazardCalculator):
             ordinal and j the IMT ordinal.
         """
         for res in task_results:
-            for dic in (res.get() if hasattr(res, 'result') else [res]):
-                for rlz, curves_by_imt in dic.iteritems():
-                    for j, curves in enumerate(curves_by_imt):
-                        # j is the IMT index
-                        self.curves_by_rlz[rlz][j] = 1. - (
-                            1. - self.curves_by_rlz[rlz][j]) * (1. - curves)
+            dic = res.get() if hasattr(res, 'result') else res
+            for rlz, curves_by_imt in dic.iteritems():
+                for j, curves in enumerate(curves_by_imt):
+                    # j is the IMT index
+                    self.curves_by_rlz[rlz][j] = 1. - (
+                        1. - self.curves_by_rlz[rlz][j]) * (1. - curves)
             self.log_percent()
 
     # this could be parallelized in the future, however in all the cases
