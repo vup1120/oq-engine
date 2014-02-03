@@ -39,7 +39,6 @@ import numpy.random
 from django.db import transaction
 from openquake.hazardlib.calc import filters
 from openquake.hazardlib.calc import gmf
-from openquake.hazardlib.tom import PoissonTOM
 from openquake.hazardlib.imt import from_string
 
 from openquake.engine import writer, logs
@@ -50,7 +49,7 @@ from openquake.engine.calculators.hazard.event_based import post_processing
 from openquake.engine.db import models
 from openquake.engine.input import logictree
 from openquake.engine.utils import tasks
-from openquake.engine.performance import EnginePerformanceMonitor
+from openquake.engine.performance import EnginePerformanceMonitor, LightMonitor
 
 
 #: Always 1 for the computation of ground motion fields in the event-based
@@ -76,6 +75,8 @@ class RuptureCollector(object):
             self._dd[src_id, rup].append((ses_ordinal, num_occurrencies))
 
     def get_ruptures(self):
+        """
+        """
         for src_id, rup in sorted(self._dd):
             for ses, num_occurrencies in self._dd[src_id, rup]:
                 for _ in range(num_occurrencies):
@@ -91,6 +92,8 @@ class RuptureCollector(object):
         self._dd.clear()
 
     def save_ses_ruptures(self):
+        """
+        """
         ses_coll = self.ses_collection
         all_ses = list(models.SES.objects.filter(ses_collection=ses_coll))
         with transaction.commit_on_success(using='job_init'):
@@ -131,22 +134,27 @@ def compute_ses(job_id, src_seeds, ses_coll, task_no):
     :param ses_coll:
         an instance of :class:`openquake.engine.db.models.SESCollection`
     """
-    hc = models.HazardCalculation.objects.get(oqjob=job_id)
     rnd = random.Random()
     all_ses = models.SES.objects.filter(ses_collection=ses_coll)
-    tom = PoissonTOM(hc.investigation_time)
     collector = RuptureCollector(ses_coll, task_no)
 
+    mon1 = LightMonitor('generating ruptures', job_id, compute_ses)
+    mon2 = LightMonitor('sampling ruptures', job_id, compute_ses)
+
     # Compute and save stochastic event sets
-    with EnginePerformanceMonitor('computing ses', job_id, compute_ses):
-        for src, seed in src_seeds:
-            rnd.seed(seed)
-            rupts = list(src.iter_ruptures(tom))
-            for ses in all_ses:
-                numpy.random.seed(rnd.randint(0, models.MAX_SINT_32))
-                for r in rupts:
+    for src, seed in src_seeds:
+        rnd.seed(seed)
+        with mon1:
+            rupts = list(src.iter_ruptures())
+
+        for ses in all_ses:
+            numpy.random.seed(rnd.randint(0, models.MAX_SINT_32))
+            for i, r in enumerate(rupts):
+                with mon2:
                     collector.add(ses.ordinal, src.source_id,
                                   r, r.sample_number_of_occurrences())
+    mon1.flush()
+    mon2.flush()
     with EnginePerformanceMonitor('saving ses', job_id, compute_ses):
         collector.save_ses_ruptures()
     return collector
