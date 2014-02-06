@@ -453,6 +453,8 @@ def run_calc(job, log_level, log_file, exports, job_type,
         job.save()
         record_job_stop_time(job)
         cleanup_after_job(job, terminate=TERMINATE)
+        for connection in django_db.connections.all():
+            connection.close()
     return job
 
 
