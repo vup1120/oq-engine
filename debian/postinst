@@ -24,19 +24,6 @@ set -e
 GEM_DEB_PACKAGE="python-oq-engine"
 PG_CONF="/etc/postgresql/9.1/main/postgresql.conf"
 
-if [ -f /usr/sbin/rabbitmqctl ]; then
-    # create rabbitmq configuration for python-celery
-    celeryuser_count=`rabbitmqctl list_users | grep celeryuser | wc -l`
-    if [ $celeryuser_count -eq 0 ]; then
-        rabbitmqctl add_user celeryuser celery
-    fi;
-    celeryvhost_count=`rabbitmqctl list_vhosts | grep celeryvhost | wc -l`
-    if [ $celeryvhost_count -eq 0 ]; then
-        rabbitmqctl add_vhost celeryvhost
-        rabbitmqctl set_permissions -p celeryvhost celeryuser ".*" ".*" ".*"
-    fi;
-fi
-
 HDIR=/usr/openquake/engine
 IDIR=/usr/share/pyshared/openquake/engine
 mkdir -p $HDIR
@@ -183,7 +170,7 @@ if [ -f /usr/lib/postgresql/9.1/bin/postgres ]; then
     fi
 
     # Restart the remaining services just to be on the safe side.
-    /etc/init.d/rabbitmq-server restart
+    /etc/init.d/redis-server restart
 
     # Restart celeryd
     if [ -x /etc/init.d/celeryd ]; then
