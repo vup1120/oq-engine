@@ -40,13 +40,11 @@ config.abort_if_no_config_available()
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-amqp = config.get_section("amqp")
+redis = config.get_section("redis")
 
-BROKER_HOST = amqp.get("host")
-BROKER_PORT = int(amqp.get("port"))
-BROKER_USER = amqp.get("user")
-BROKER_PASSWORD = amqp.get("password")
-BROKER_VHOST = amqp.get("vhost")
+BROKER_TRANSPORT = "redis"
+BROKER_HOST = redis.get("host")
+BROKER_PORT = int(redis.get("port"))
 # BROKER_POOL_LIMIT enables a connections pool so Celery can reuse
 # a single connection to RabbitMQ. Value 10 is the default from
 # Celery 2.5 where this feature is enabled by default.
@@ -54,7 +52,9 @@ BROKER_VHOST = amqp.get("vhost")
 # See https://bugs.launchpad.net/oq-engine/+bug/1250402
 BROKER_POOL_LIMIT = None
 
-CELERY_RESULT_BACKEND = "amqp"
+CELERY_RESULT_BACKEND = "redis"
+CELERY_REDIS_HOST = redis.get("host")
+CELERY_REDIS_PORT = int(redis.get("port"))
 
 # CELERY_ACKS_LATE and CELERYD_PREFETCH_MULTIPLIER settings help evenly
 # distribute tasks across the cluster. This configuration is intended
