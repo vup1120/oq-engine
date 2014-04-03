@@ -26,6 +26,7 @@ import traceback
 from celery.task.sets import TaskSet
 from celery.app import current_app
 from celery.task import task
+from celery.task.control import inspect
 
 from openquake.engine import logs, no_distribute
 from openquake.engine.db import models
@@ -76,6 +77,12 @@ def safely_call(func, args):
         return '\n%s%s: %s' % (tb_str, etype.__name__, exc), etype
 
 
+ def ping_nodes(ctx):
+     insp = inspect()
+     d = insp.stats()
+     if not d:
+         print "Failure"
+
 def map_reduce(task, task_args, agg, acc):
     """
     Given a task and an iterable of positional arguments, apply the
@@ -114,7 +121,8 @@ def map_reduce(task, task_args, agg, acc):
         taskname = task.__name__
         mon = LightMonitor('unpickling %s' % taskname, job_id, task)
         taskset = TaskSet(tasks=map(task.subtask, task_args))
-        for task_id, result_dict in taskset.apply_async().iter_native():
+        for task_id, result_dict in
+taskset.apply_async().iter_native(gem_cb=ping_nodes, gem_ctx=None):
             result, exctype = result_dict['result']
             if exctype:
                 raise exctype(result)
