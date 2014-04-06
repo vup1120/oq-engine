@@ -43,9 +43,10 @@ class HazardCurveGetterPerAssetTestCase(unittest.TestCase):
         models.JobStats.objects.create(oq_job=self.job)
         calc.pre_execute()
 
+        sa = calc.rc.get_site_assets_dict(calc.monitor('')).iteritems()
         site_assets = {}
         self.assets = []
-        for site_id, assets in calc.rc.get_site_assets_dict().iteritems():
+        for site_id, assets in sa:
             site_assets[site_id] = [asset for asset in assets
                                     if asset.taxonomy == self.taxonomy]
             self.assets.extend(site_assets[site_id])

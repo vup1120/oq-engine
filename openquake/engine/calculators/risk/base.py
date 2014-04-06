@@ -115,18 +115,23 @@ class RiskCalculator(base.Calculator):
         output_containers = writers.combine_builders(
             [builder(self) for builder in self.output_builders])
 
-        site_assets_total = self.rc.get_site_assets_dict()
+        site_assets_total = self.rc.get_site_assets_dict(self.monitor(''))
         nblocks = int(config.get('hazard', 'concurrent_tasks'))
         blocks = general.SequenceSplitter(nblocks).split_on_max_weight(
             [(site_id, len(assets))
              for site_id, assets in site_assets_total.iteritems()])
 
         for site_ids in blocks:
-            taxonomy_site_assets = {}  # a dictionary of dictionaries
+            taxonomy_site_assets = {}  # {taxonomy: {site_id: assets}}
             for site_id in site_ids:
                 for taxonomy, assets in itertools.groupby(
                         site_assets_total[site_id],
                         key=operator.attrgetter('taxonomy')):
+                    if (self.rc.taxonomies_from_model and taxonomy not in
+                            self.risk_models):
+                        # ignore taxonomies not in the risk models
+                        # if the parameter taxonomies_from_model is set
+                        continue
                     taxonomy_site_assets.setdefault(taxonomy, {})
                     taxonomy_site_assets[taxonomy][site_id] = list(assets)
 

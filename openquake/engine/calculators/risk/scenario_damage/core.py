@@ -54,14 +54,11 @@ def scenario_damage(job_id, units, containers, params):
     monitor = EnginePerformanceMonitor(
         None, job_id, scenario_damage, tracing=True)
 
-    # in scenario damage calculation we have only ONE calculation unit
-    [unit] = units
-
-    # and NO containes
+    # in scenario damage calculation we have NO containers
     assert len(containers) == 0
 
     with db.transaction.commit_on_success(using='job_init'):
-        return do_scenario_damage(unit, params, monitor)
+        return [do_scenario_damage(unit, params, monitor) for unit in units]
 
 
 def do_scenario_damage(unit, params, monitor):
@@ -147,15 +144,14 @@ class ScenarioDamageRiskCalculator(base.RiskCalculator):
         taxonomy. Fractions and taxonomy are extracted from task_result
 
         :param task_result:
-            A pair (fractions, taxonomy)
+            A list [(fractions, taxonomy), ...]
         """
-        self.log_percent(task_result)
-        fractions, taxonomy = task_result
-
-        if fractions is not None:
-            if taxonomy not in self.ddpt:
-                self.ddpt[taxonomy] = numpy.zeros(fractions.shape)
-            self.ddpt[taxonomy] += fractions
+        self.log_percent()
+        for fractions, taxonomy in task_result:
+            if fractions is not None:
+                if taxonomy not in self.ddpt:
+                    self.ddpt[taxonomy] = numpy.zeros(fractions.shape)
+                self.ddpt[taxonomy] += fractions
 
     def post_process(self):
         """
