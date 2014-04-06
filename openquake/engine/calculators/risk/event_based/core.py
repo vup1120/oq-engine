@@ -378,33 +378,28 @@ class EventBasedRiskCalculator(base.RiskCalculator):
                                 aggregate_loss_losses, aggregate_loss_poes),
                             stddev_loss=numpy.std(aggregate_losses))
 
-    def calculation_unit(self, loss_type, assets):
+    def calculation_units(self, loss_type, taxonomy_site_assets):
         """
         :returns:
           a list of instances of `..base.CalculationUnit` for the given
           `assets` to be run in the celery task
         """
-
-        # assume all assets have the same taxonomy
-        taxonomy = assets[0].taxonomy
-        risk_model = self.risk_models[taxonomy][loss_type]
-        time_span, tses = self.hazard_times()
-
-        return workflows.CalculationUnit(
-            loss_type,
-            workflows.ProbabilisticEventBased(
-                risk_model.vulnerability_function,
-                self.rnd.randint(0, models.MAX_SINT_32),
-                self.rc.asset_correlation,
-                time_span, tses,
-                self.rc.loss_curve_resolution,
-                self.rc.conditional_loss_poes,
-                self.rc.insured_losses),
-            hazard_getters.GroundMotionValuesGetter(
-                self.rc.hazard_outputs(),
-                assets,
-                self.rc.best_maximum_distance,
-                risk_model.imt))
+        for taxonomy, site_assets in taxonomy_site_assets.iteritems():
+            risk_model = self.risk_models[taxonomy][loss_type]
+            time_span, tses = self.hazard_times()
+            yield workflows.CalculationUnit(
+                loss_type,
+                workflows.ProbabilisticEventBased(
+                    risk_model.vulnerability_function,
+                    self.rnd.randint(0, models.MAX_SINT_32),
+                    self.rc.asset_correlation,
+                    time_span, tses,
+                    self.rc.loss_curve_resolution,
+                    self.rc.conditional_loss_poes,
+                    self.rc.insured_losses),
+                hazard_getters.GroundMotionValuesGetter(
+                    self.rc.hazard_outputs(),
+                    site_assets, risk_model.imt))
 
     def hazard_times(self):
         """

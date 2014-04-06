@@ -93,42 +93,34 @@ class EventBasedBCRRiskCalculator(event_based.EventBasedRiskCalculator):
         super(EventBasedBCRRiskCalculator, self).__init__(job)
         self.risk_models_retrofitted = None
 
-    def calculation_unit(self, loss_type, assets):
+    def calculation_units(self, loss_type, taxonomy_site_assets):
         """
         :returns:
           a list of instances of `..base.CalculationUnit` for the given
           `assets` to be run in the celery task
         """
-
-        # assume all assets have the same taxonomy
-        taxonomy = assets[0].taxonomy
-        model_orig = self.risk_models[taxonomy][loss_type]
-        model_retro = self.risk_models_retrofitted[taxonomy][loss_type]
-
-        time_span, tses = self.hazard_times()
-
-        return workflows.CalculationUnit(
-            loss_type,
-            workflows.ProbabilisticEventBasedBCR(
-                model_orig.vulnerability_function,
-                self.rnd.randint(0, models.MAX_SINT_32),
-                model_retro.vulnerability_function,
-                self.rnd.randint(0, models.MAX_SINT_32),
-                self.rc.asset_correlation,
-                time_span, tses, self.rc.loss_curve_resolution,
-                self.rc.interest_rate,
-                self.rc.asset_life_expectancy),
-            hazard_getters.BCRGetter(
-                hazard_getters.GroundMotionValuesGetter(
-                    self.rc.hazard_outputs(),
-                    assets,
-                    self.rc.best_maximum_distance,
-                    model_orig.imt),
-                hazard_getters.GroundMotionValuesGetter(
-                    self.rc.hazard_outputs(),
-                    assets,
-                    self.rc.best_maximum_distance,
-                    model_retro.imt)))
+        for taxonomy, site_assets in taxonomy_site_assets.iteritems():
+            model_orig = self.risk_models[taxonomy][loss_type]
+            model_retro = self.risk_models_retrofitted[taxonomy][loss_type]
+            time_span, tses = self.hazard_times()
+            yield workflows.CalculationUnit(
+                loss_type,
+                workflows.ProbabilisticEventBasedBCR(
+                    model_orig.vulnerability_function,
+                    self.rnd.randint(0, models.MAX_SINT_32),
+                    model_retro.vulnerability_function,
+                    self.rnd.randint(0, models.MAX_SINT_32),
+                    self.rc.asset_correlation,
+                    time_span, tses, self.rc.loss_curve_resolution,
+                    self.rc.interest_rate,
+                    self.rc.asset_life_expectancy),
+                hazard_getters.BCRGetter(
+                    hazard_getters.GroundMotionValuesGetter(
+                        self.rc.hazard_outputs(),
+                        site_assets, model_orig.imt),
+                    hazard_getters.GroundMotionValuesGetter(
+                        self.rc.hazard_outputs(),
+                        site_assets, model_retro.imt)))
 
     def post_process(self):
         """

@@ -192,6 +192,7 @@ class SequenceSplitter(object):
         return self.split_on_max_weight([(item, 1) for item in sequence])
 
     def _split_on_max_weight(self, sequence):
+        assert len(sequence)
         # doing the real work here
         total_weight = float(sum(item[1] for item in sequence))
         self.max_weight = ceil(total_weight, self.num_blocks)

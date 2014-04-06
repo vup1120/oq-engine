@@ -121,26 +121,24 @@ class ScenarioDamageRiskCalculator(base.RiskCalculator):
         self.ddpt = {}
         self.damage_state_ids = None
 
-    def calculation_unit(self, loss_type, assets):
+    def calculation_units(self, loss_type, taxonomy_site_assets):
         """
         :returns:
           a list of :class:`..base.CalculationUnit` instances
         """
-        taxonomy = assets[0].taxonomy
-        model = self.risk_models[taxonomy][loss_type]
+        for taxonomy, site_assets in taxonomy_site_assets.iteritems():
+            model = self.risk_models[taxonomy][loss_type]
 
-        # no loss types support at the moment. Use the sentinel key
-        # "damage" instead of a loss type for consistency with other
-        # methods
-        ret = workflows.CalculationUnit(
-            loss_type,
-            calculators.Damage(model.fragility_functions),
-            hazard_getters.GroundMotionValuesGetter(
-                self.rc.hazard_outputs(),
-                assets,
-                self.rc.best_maximum_distance,
-                model.imt))
-        return ret
+            # no loss types support at the moment. Use the sentinel key
+            # "damage" instead of a loss type for consistency with other
+            # methods
+            ret = workflows.CalculationUnit(
+                loss_type,
+                calculators.Damage(model.fragility_functions),
+                hazard_getters.GroundMotionValuesGetter(
+                    self.rc.hazard_outputs(),
+                    site_assets, model.imt))
+            yield ret
 
     def task_completed(self, task_result):
         """

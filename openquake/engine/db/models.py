@@ -1133,6 +1133,34 @@ class RiskCalculation(djm.Model):
         return (self.risk_investigation_time or
                 self.get_hazard_calculation().investigation_time)
 
+    def get_site_assets_dict(self):
+        """
+        Build the dictionary associating the assets to the closest
+        hazard sites for the current exposure model.
+        """
+        max_dist = self.best_maximum_distance * 1000  # km to meters
+        hc_id = self.get_hazard_calculation().id
+
+        cursor = connections['job_init'].cursor()
+
+        cursor.execute("""
+  --   TODO: region constraint
+  SELECT site_id, array_agg(asset_id ORDER BY asset_id) AS asset_ids FROM (
+  SELECT DISTINCT ON (exp.id) exp.id AS asset_id, hsite.id AS site_id
+  FROM riski.exposure_data AS exp
+  JOIN hzrdi.hazard_site AS hsite
+  ON ST_DWithin(exp.site, hsite.location, %s)
+  WHERE hsite.hazard_calculation_id = %s
+  AND exposure_model_id = %s
+  ORDER BY exp.id, ST_Distance(exp.site, hsite.location, false)) AS x
+  GROUP BY site_id ORDER BY site_id;
+       """, (max_dist, hc_id, self.exposure_model.id))
+        dic = {}
+        for site_id, asset_ids in cursor:
+            dic[site_id] = ExposureData.objects.get_asset_chunk(
+                self, asset_ids=tuple(asset_ids))
+        return dic
+
 
 def _prep_geometry(kwargs):
     """
@@ -3043,7 +3071,8 @@ class AssetManager(djm.GeoManager):
     Asset manager
     """
 
-    def get_asset_chunk(self, rc, taxonomy, offset, size):
+    def get_asset_chunk(self, rc, taxonomy=None, offset=0, size=None,
+                        asset_ids=None):
         """
         :returns:
 
@@ -3058,24 +3087,31 @@ class AssetManager(djm.GeoManager):
            occupants value for the risk calculation given in input and the cost
            for each cost type considered in `rc`
         """
-
         query, args = self._get_asset_chunk_query_args(
-            rc, taxonomy, offset, size)
+            rc, taxonomy, offset, size, asset_ids)
         return list(self.raw(query, args))
 
-    def _get_asset_chunk_query_args(self, rc, taxonomy, offset, size):
+    def _get_asset_chunk_query_args(
+            self, rc, taxonomy, offset, size, asset_ids):
         """
         Build a parametric query string and the corresponding args for
         #get_asset_chunk
         """
-        args = (rc.exposure_model.id, taxonomy,
-                "SRID=4326; %s" % rc.region_constraint.wkt)
-
+        if taxonomy is not None and asset_ids is None:
+            args = (rc.exposure_model.id, taxonomy,
+                    "SRID=4326; %s" % rc.region_constraint.wkt)
+        elif asset_ids is not None and taxonomy is None:
+            args = (rc.exposure_model.id, asset_ids,
+                    "SRID=4326; %s" % rc.region_constraint.wkt)
+        else:
+            raise ValueError(
+                'taxonomy and asset_ids cannot be both not None: x'
+                'taxonomy=%s, asset_ids=%s' % (taxonomy, asset_ids))
         people_field, occupants_cond, occupancy_join, occupants_args = (
             self._get_people_query_helper(
                 rc.exposure_model.category, rc.time_event))
 
-        args += occupants_args + (size, offset)
+        args += occupants_args + (offset,)
 
         cost_type_fields, cost_type_joins = self._get_cost_types_query_helper(
             rc.exposure_model.costtype_set.all())
@@ -3088,19 +3124,23 @@ class AssetManager(djm.GeoManager):
             {occupancy_join}
             ON riski.exposure_data.id = riski.occupancy.exposure_data_id
             {costs_join}
-            WHERE exposure_model_id = %s AND
-                  taxonomy = %s AND
-                  ST_COVERS(ST_GeographyFromText(%s), site) AND
+            WHERE exposure_model_id = %s {taxonomy_cond} {asset_cond}
+                  AND ST_COVERS(ST_GeographyFromText(%s), site) AND
                   {occupants_cond}
             GROUP BY riski.exposure_data.id
             ORDER BY ST_X(geometry(site)), ST_Y(geometry(site))
-            LIMIT %s OFFSET %s
+            OFFSET %s
             """.format(people_field=people_field,
                        occupants_cond=occupants_cond,
+                       taxonomy_cond='AND taxonomy=%s' if taxonomy else '',
+                       asset_cond=('AND riski.exposure_data.id IN %s'
+                                   if asset_ids else ''),
                        costs=cost_type_fields,
                        costs_join=cost_type_joins,
                        occupancy_join=occupancy_join)
-
+        if size is not None:
+            query += ' LIMIT %s'
+            args += (size,)
         return query, args
 
     def _get_people_query_helper(self, category, time_event):
