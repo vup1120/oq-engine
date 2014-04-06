@@ -22,10 +22,38 @@ import itertools
 import operator
 
 from openquake.engine import logs, export
-from openquake.engine.utils import config, general
+from openquake.engine.utils import config, general, tasks
 from openquake.engine.db import models
 from openquake.engine.calculators import base
 from openquake.engine.calculators.risk import writers, validation, loaders
+
+from django.db import connections
+
+
+@tasks.oqtask
+def assoc_site_assets(job_id, taxonomy):
+    """
+    Build the dictionary associating the assets to the closest
+    hazard sites for the current exposure model and the given taxonomy
+    """
+    rc = models.OqJob.objects.get(pk=job_id).risk_calculation
+    max_dist = rc.best_maximum_distance * 1000  # km to meters
+    hc_id = rc.get_hazard_calculation().id
+    cursor = connections['job_init'].cursor()
+    cursor.execute("""
+  SELECT site_id, array_agg(asset_id ORDER BY asset_id) AS asset_ids FROM (
+  SELECT DISTINCT ON (exp.id) exp.id AS asset_id, hsite.id AS site_id
+  FROM riski.exposure_data AS exp
+  JOIN hzrdi.hazard_site AS hsite
+  ON ST_DWithin(exp.site, hsite.location, %s)
+  WHERE hsite.hazard_calculation_id = %s
+  AND exposure_model_id = %s AND taxonomy=%s
+  AND ST_COVERS(ST_GeographyFromText(%s), exp.site)
+  ORDER BY exp.id, ST_Distance(exp.site, hsite.location, false)) AS x
+  GROUP BY site_id ORDER BY site_id;
+   """, (max_dist, hc_id, rc.exposure_model.id, taxonomy,
+         rc.region_constraint.wkt))
+    return cursor.fetchall()
 
 
 class RiskCalculator(base.Calculator):
@@ -87,6 +115,37 @@ class RiskCalculator(base.Calculator):
                 raise ValueError("""Problems in calculator configuration:
                                  %s""" % error)
 
+        with self.monitor('getting asset chunks'):
+            asset_dict = dict(
+                (asset.id, asset)
+                for asset in models.ExposureData.objects.get_asset_chunk(
+                    self.rc))
+
+        def update_dict(acc, site_asset_ids):
+            for site_id, asset_ids in site_asset_ids:
+                acc[site_id].extend(asset_ids)
+            return acc
+
+        arglist = [(self.job.id, taxonomy)
+                   for taxonomy in self.taxonomies_asset_count]
+        site_asset_ids = tasks.map_reduce(
+            assoc_site_assets, arglist, update_dict,
+            collections.defaultdict(list))
+
+        self.site_assets = {}
+        ok_assets = set()  # assets close to a hazard site within the distance
+        for site_id, asset_ids in site_asset_ids.iteritems():
+            self.site_assets[site_id] = [asset_dict[asset_id]
+                                         for asset_id in asset_ids]
+            ok_assets.update(asset_ids)
+        missing_assets = set(asset_dict) - ok_assets
+        if missing_assets:
+            logs.LOG.warn('%d assets are too far from the hazard sites '
+                          'and the risk cannot be computed',
+                          len(missing_assets))
+            for asset_id in missing_assets:
+                logs.LOG.info('missing hazard for %s', asset_dict[asset_id])
+
     # TODO: remove
     def concurrent_tasks(self):
         """
@@ -115,17 +174,16 @@ class RiskCalculator(base.Calculator):
         output_containers = writers.combine_builders(
             [builder(self) for builder in self.output_builders])
 
-        site_assets_total = self.rc.get_site_assets_dict(self.monitor(''))
         nblocks = int(config.get('hazard', 'concurrent_tasks'))
         blocks = general.SequenceSplitter(nblocks).split_on_max_weight(
             [(site_id, len(assets))
-             for site_id, assets in site_assets_total.iteritems()])
+             for site_id, assets in self.site_assets.iteritems()])
 
         for site_ids in blocks:
             taxonomy_site_assets = {}  # {taxonomy: {site_id: assets}}
             for site_id in site_ids:
                 for taxonomy, assets in itertools.groupby(
-                        site_assets_total[site_id],
+                        self.site_assets[site_id],
                         key=operator.attrgetter('taxonomy')):
                     if (self.rc.taxonomies_from_model and taxonomy not in
                             self.risk_models):
