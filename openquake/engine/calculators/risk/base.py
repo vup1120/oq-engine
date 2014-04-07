@@ -78,7 +78,6 @@ class RiskCalculator(base.Calculator):
 
     def __init__(self, job):
         super(RiskCalculator, self).__init__(job)
-
         self.taxonomies_asset_count = None
         self.risk_models = None
 
@@ -108,18 +107,24 @@ class RiskCalculator(base.Calculator):
                     for t, count in self.taxonomies_asset_count.items()
                     if t in self.risk_models)
 
-        n_assets = sum(self.taxonomies_asset_count.itervalues())
-        logs.LOG.info('Considering %d assets of %d distinct taxonomies',
-                      n_assets, len(self.taxonomies_asset_count))
-        for taxonomy, counts in self.taxonomies_asset_count.iteritems():
-            logs.LOG.info('taxonomy=%s, assets=%d', taxonomy, counts)
-
         for validator_class in self.validators:
             validator = validator_class(self)
             error = validator.get_error()
             if error:
                 raise ValueError("""Problems in calculator configuration:
                                  %s""" % error)
+
+        self.populate_site_assets()
+
+    def populate_site_assets(self):
+        """
+        Populate the dictionary .site_assets.
+        """
+        n_assets = sum(self.taxonomies_asset_count.itervalues())
+        logs.LOG.info('Considering %d assets of %d distinct taxonomies',
+                      n_assets, len(self.taxonomies_asset_count))
+        for taxonomy, counts in self.taxonomies_asset_count.iteritems():
+            logs.LOG.info('taxonomy=%s, assets=%d', taxonomy, counts)
 
         with self.monitor('getting asset chunks'):
             asset_dict = dict(
@@ -131,7 +136,6 @@ class RiskCalculator(base.Calculator):
             for site_id, asset_ids in site_asset_ids:
                 acc[site_id].extend(asset_ids)
             return acc
-
         arglist = [(self.job.id, taxonomy)
                    for taxonomy in self.taxonomies_asset_count]
         site_asset_ids = tasks.map_reduce(
@@ -146,9 +150,9 @@ class RiskCalculator(base.Calculator):
             ok_assets.update(asset_ids)
         missing_assets = set(asset_dict) - ok_assets
         if missing_assets:
-            logs.LOG.warn('%d assets are too far from the hazard sites '
+            logs.LOG.warn('%d/%d assets are too far from the hazard sites '
                           'and the risk cannot be computed',
-                          len(missing_assets))
+                          len(missing_assets), n_assets)
             for asset_id in missing_assets:
                 logs.LOG.info('missing hazard for %s', asset_dict[asset_id])
 

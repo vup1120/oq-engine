@@ -125,6 +125,9 @@ class HazardCurveGetterPerAsset(HazardGetter):
                 for asset in assets:
                     all_assets.append(asset)
                     all_curves.append(curve)
+        logs.LOG.info(
+            'Getting data from gmf_id=%d, %d sites, %d assets, IMT=%s',
+            ho.id, len(self.site_assets), len(all_assets), self.imt)
         return all_assets, all_curves
 
     def _get_poes(self, site, hazard_id):
@@ -186,9 +189,13 @@ class GroundMotionValuesGetter(HazardGetter):
                 elif gmvs:  # scenario
                     array = numpy.array(gmvs)
                     all_gmvs.extend([array] * n_assets)
+
+        logs.LOG.info(
+            'Getting data from gmf_id=%d, %d sites, %d assets, IMT=%s',
+            hazard_output.id, len(self.site_assets), len(all_assets), self.imt)
+
         if all_assets and not all_ruptures:  # scenario
             return all_assets, all_gmvs
-
         # second pass for event based, filling with zeros
         with monitor.copy('filling gmvs with zeros'):
             all_ruptures = sorted(all_ruptures)
