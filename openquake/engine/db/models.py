@@ -1536,6 +1536,7 @@ class SESCollection(djm.Model):
     lt_model = djm.OneToOneField(
         'LtSourceModel', related_name='ses_collection')
     ordinal = djm.IntegerField(null=False)
+    num_ruptures = fields.IntArrayField(null=True)
 
     class Meta:
         db_table = 'hzrdr\".\"ses_collection'
@@ -1694,12 +1695,13 @@ class ProbabilisticRupture(djm.Model):
     is_from_fault_source = djm.NullBooleanField(null=False)
     is_multi_surface = djm.NullBooleanField(null=False)
     surface = fields.PickleField(null=False)
+    site_indices = fields.IntArrayField(null=True)
 
     class Meta:
         db_table = 'hzrdr\".\"probabilistic_rupture'
 
     @classmethod
-    def create(cls, rupture, ses_collection):
+    def create(cls, rupture, ses_collection, site_indices=None):
         """
         Create a ProbabilisticRupture row on the database.
 
@@ -1719,7 +1721,8 @@ class ProbabilisticRupture(djm.Model):
             is_from_fault_source=iffs,
             is_multi_surface=ims,
             surface=rupture.surface,
-            hypocenter=rupture.hypocenter.wkt2d)
+            hypocenter=rupture.hypocenter.wkt2d,
+            site_indices=site_indices)
 
     _geom = None
 
