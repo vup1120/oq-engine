@@ -377,7 +377,8 @@ CREATE TABLE hzrdr.ses_collection (
     id SERIAL PRIMARY KEY,
     output_id INTEGER NOT NULL,
     lt_model_id INTEGER NOT NULL,
-    ordinal INTEGER NOT NULL
+    ordinal INTEGER NOT NULL,
+    num_ruptures INTEGER[]
 ) TABLESPACE hzrdr_ts;
 
 -- Stochastic Event Set: A container for 1 or more ruptures associated with a
@@ -403,7 +404,8 @@ CREATE TABLE hzrdr.probabilistic_rupture (
     is_from_fault_source BOOLEAN NOT NULL,
     is_multi_surface BOOLEAN NOT NULL,
     surface BYTEA NOT NULL,
-    magnitude float NOT NULL
+    magnitude float NOT NULL,
+    site_indices INTEGER[]
 ) TABLESPACE hzrdr_ts;
 SELECT AddGeometryColumn('hzrdr', 'probabilistic_rupture', 'hypocenter', 4326, 'POINT', 2);
 

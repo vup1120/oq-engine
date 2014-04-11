@@ -59,7 +59,8 @@ inserter = writer.CacheInserter(models.GmfData, 1000)
 
 
 @tasks.oqtask
-def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
+def compute_ses_and_gmfs(
+        job_id, sitecol, src_seeds, lt_model, gsim_by_rlz, task_no):
     """
     Celery task for the stochastic event set calculator.
 
@@ -74,16 +75,18 @@ def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
 
     :param int job_id:
         ID of the currently running job.
+    :param sitecol:
+        a :class:`openquake.hazardlib.site.SiteCollection` instance
     :param src_seeds:
         List of pairs (source, seed)
-    :params gsims_by_rlz:
+    :params gsim_by_rlz:
         dictionary of GSIM
     :param task_no:
         an ordinal so that GMV can be collected in a reproducible order
     """
-    # NB: all realizations in gsims_by_rlz correspond to the same source model
+    # NB: all realizations in gsim_by_rlz correspond to the same source model
     ses_coll = models.SESCollection.objects.get(lt_model=lt_model)
-
+    num_ruptures = numpy.zeros(len(sitecol), dtype=int)
     hc = models.HazardCalculation.objects.get(oqjob=job_id)
     all_ses = models.SES.objects.filter(ses_collection=ses_coll)
     imts = map(from_string, hc.intensity_measure_types)
@@ -92,7 +95,7 @@ def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
         truncation_level=hc.truncation_level,
         maximum_distance=hc.maximum_distance)
 
-    gmfcollector = GmfCollector(params, imts, gsims_by_rlz)
+    gmfcollector = GmfCollector(params, imts, gsim_by_rlz)
 
     filter_sites_mon = LightMonitor(
         'filtering sites', job_id, compute_ses_and_gmfs)
@@ -116,8 +119,8 @@ def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
 
         with filter_sites_mon:  # filtering sources
             s_sites = src.filter_sites_by_distance_to_source(
-                hc.maximum_distance, hc.site_collection
-            ) if hc.maximum_distance else hc.site_collection
+                hc.maximum_distance, sitecol
+            ) if hc.maximum_distance else sitecol
             if s_sites is None:
                 continue
 
@@ -152,14 +155,17 @@ def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
             with save_ruptures_mon:  # saving ses_ruptures
                 # using a django transaction make the saving faster
                 with transaction.commit_on_success(using='job_init'):
+                    site_indices = r_sites.indices
                     prob_rup = models.ProbabilisticRupture.create(
-                        rup, ses_coll)
+                        rup, ses_coll, site_indices)
                     for ses, num_occurrences in ses_num_occ[rup]:
                         for occ_no in range(1, num_occurrences + 1):
                             rup_seed = rnd.randint(0, models.MAX_SINT_32)
                             ses_rup = models.SESRupture.create(
                                 prob_rup, ses, src.source_id,
                                 rup.rup_no, occ_no, rup_seed)
+                            for site_idx in site_indices:
+                               num_ruptures[site_idx] += 1
                             ses_ruptures.append(ses_rup)
 
             with compute_gmfs_mon:  # computing GMFs
@@ -170,15 +176,15 @@ def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
 
         # log calc_time per distinct rupture
         if ses_num_occ:
-            num_ruptures = len(ses_num_occ)
+            uniq_ruptures = len(ses_num_occ)
             tot_ruptures = sum(num for rup in ses_num_occ
                                for ses, num in ses_num_occ[rup])
             logs.LOG.info(
-                'job=%d, src=%s:%s, num_ruptures=%d, tot_ruptures=%d, '
+                'job=%d, src=%s:%s, uniq_ruptures=%d, tot_ruptures=%d, '
                 'num_sites=%d, calc_time=%fs', job_id, src.source_id,
-                src.__class__.__name__, num_ruptures, tot_ruptures,
+                src.__class__.__name__, uniq_ruptures, tot_ruptures,
                 len(s_sites), time.time() - t0)
-            num_distinct_ruptures += num_ruptures
+            num_distinct_ruptures += uniq_ruptures
 
     if num_distinct_ruptures:
         logs.LOG.info('job=%d, task %d generated %d/%d ruptures',
@@ -194,24 +200,26 @@ def compute_ses_and_gmfs(job_id, src_seeds, lt_model, gsims_by_rlz, task_no):
                 'saving gmfs', job_id, compute_ses_and_gmfs):
             gmfcollector.save_gmfs(task_no)
 
+    return ses_coll.id, task_no, num_ruptures
+
 
 class GmfCollector(object):
     """
     A class to compute and save ground motion fields.
     """
-    def __init__(self, params, imts, gsims_by_rlz):
+    def __init__(self, params, imts, gsim_by_rlz):
         """
         :param params:
             a dictionary of parameters with keys
             correl_model, truncation_level, maximum_distance
         :param imts:
             a list of hazardlib intensity measure types
-        :param gsims_by_rlz:
-            a dictionary  {rlz -> {tectonic region type -> GSIM instance}}
+        :param gsim_by_rlz:
+            a dictionary rlz -> GSIM instance
         """
         self.params = params
         self.imts = imts
-        self.gsims_by_rlz = gsims_by_rlz
+        self.gsim_by_rlz = gsim_by_rlz
         # NB: I tried to use a single dictionary
         # {site_id: [(gmv, rupt_id),...]} but it took a lot more memory (MS)
         self.gmvs_per_site = collections.defaultdict(list)
@@ -233,12 +241,12 @@ class GmfCollector(object):
         :param seed:
             an integer to be used as stochastic seed
         """
-        for rlz, gsims in self.gsims_by_rlz.items():
+        for rlz, gsim in self.gsim_by_rlz.items():
             gmf_calc_kwargs = {
                 'rupture': rupture,
                 'sites': r_sites,
                 'imts': self.imts,
-                'gsim': gsims[rupture.tectonic_region_type],
+                'gsim': gsim,
                 'truncation_level': self.params['truncation_level'],
                 'realizations': DEFAULT_GMF_REALIZATIONS,
                 'correlation_model': self.params['correl_model'],
@@ -297,11 +305,11 @@ class EventBasedHazardCalculator(general.BaseHazardCalculator):
         hc = self.hc
         rnd = random.Random()
         rnd.seed(hc.random_seed)
-        for job_id, block, lt_model, gsims_by_rlz, task_no in super(
-                EventBasedHazardCalculator, self).task_arg_gen():
+        for job_id, sitecol, block, lt_model, gsim_by_rlz, task_no in \
+                super(EventBasedHazardCalculator, self).task_arg_gen():
             ss = [(src, rnd.randint(0, models.MAX_SINT_32))
                   for src in block]  # source, seed pairs
-            yield job_id, ss, lt_model, gsims_by_rlz, task_no
+            yield job_id, sitecol, ss, lt_model, gsim_by_rlz, task_no
 
         # now the source_blocks_per_ltpath dictionary can be cleared
         self.source_blocks_per_ltpath.clear()
@@ -353,15 +361,38 @@ class EventBasedHazardCalculator(general.BaseHazardCalculator):
         `execute` phase.)
         """
         super(EventBasedHazardCalculator, self).pre_execute()
+        self.num_ruptures = {}  # ses_collection_id -> num_ruptures array
         for lt_model in models.LtSourceModel.objects.filter(
                 hazard_calculation=self.hc):
             self.initialize_ses_db_records(lt_model)
+            self.num_ruptures[lt_model.ses_collection.id] = \
+                numpy.zeros(len(self.hc.site_collection), dtype=int)
+
+    @EnginePerformanceMonitor.monitor
+    def task_completed(self, result):
+        """
+        Update the .num_ruptures dictionary.
+
+        :param result: a triple (ses_coll_id, task_no, num_ruptures)
+        """
+        ses_coll_id, task_no, num_ruptures = result
+        self.num_ruptures[ses_coll_id] += num_ruptures
+        self.log_percent()
 
     def post_process(self):
         """
         If requested, perform additional processing of GMFs to produce hazard
         curves.
         """
+        # save the number of ruptures generated per site for each ses collection
+        with transaction.commit_on_success(using='job_init'):
+            for lt_model in models.LtSourceModel.objects.filter(
+                    hazard_calculation=self.hc):
+                sc = lt_model.ses_collection
+                sc.num_ruptures = list(self.num_ruptures[sc.id])
+                sc.save()
+                del self.num_ruptures[sc.id]  # save memory
+
         if self.hc.hazard_curves_from_gmfs:
             with EnginePerformanceMonitor('generating hazard curves',
                                           self.job.id):
