@@ -121,41 +121,19 @@ GROUP BY site_id ORDER BY site_id;
             if assets:
                 yield site_id, assets
 
-    def get_assets_data(self, hazard_output, monitor=None):
-        """
-        :param monitor: a performance monitor or None
-        :returns:
-            A tuple with two elements. The first is an array of instances of
-            :class:`openquake.engine.db.models.ExposureData`, the second is
-            the corresponding hazard data.
-        """
+    def __call__(self, monitor=None, rupture=None):
         monitor = monitor or DummyMonitor()
-        assets, data = self.get_data(hazard_output, monitor)
-        if not assets:
-            logs.LOG.warn(
-                'No hazard site found within the maximum distance of %f km for'
-                ' %d assets of taxonomy %s, IMT=%s: %s', self.max_distance,
-                len(self.assets), self.assets[0].taxonomy, self.imt,
-                ' '.join(a.asset_ref for a in self.assets))
-            return [], []
-
-        missing_asset_ids = set(self.asset_dict) - set(a.id for a in assets)
-
-        for missing_asset_id in missing_asset_ids:
-            logs.LOG.warn(
-                "No hazard with imt %s has been found for "
-                "the asset %s within %s km" % (
-                    self.imt,
-                    self.asset_dict[missing_asset_id],
-                    self.max_distance))
-
-        return assets, data
-
-    def __call__(self, monitor=None):
         for hazard in self.hazard_outputs:
             h = hazard.output_container
-            assets, data = self.get_assets_data(h, monitor)
-            if len(assets) > 0:
+            assets, data = self.get_data(h, monitor, rupture)
+            if not assets:
+                logs.LOG.warn(
+                    'No hazard site found within the maximum distance of '
+                    '%s km for %d assets of taxonomy %s, IMT=%s, output=%s: '
+                    '%s', self.max_distance, len(self.assets),
+                    self.assets[0].taxonomy, self.imt, hazard,
+                    ' '.join(a.asset_ref for a in self.assets))
+            else:
                 yield hazard.id, assets, data
 
     def weights(self):
@@ -175,7 +153,7 @@ class HazardCurveGetterPerAsset(HazardGetter):
     :attr imls:
         The intensity measure levels of the curves we are going to get.
     """
-    def get_data(self, hazard_output, monitor):
+    def get_data(self, hazard_output, monitor, extra=None):
         """
         Calls ``get_by_site`` for each asset and pack the results as
         requested by the :meth:`HazardGetter.get_data` interface.
@@ -246,7 +224,7 @@ class ScenarioGetter(HazardGetter):
                 logs.LOG.warn('No gmvs for site %s, IMT=%s', site_id, self.imt)
         return gmvs
 
-    def get_data(self, hazard_output, monitor):
+    def get_data(self, hazard_output, monitor, extra=None):
         """
         :returns: a list with all the assets and the hazard data.
 
@@ -294,7 +272,7 @@ class GroundMotionValuesGetter(ScenarioGetter):
             logs.LOG.warn('No gmvs for site %s, IMT=%s', site_id, self.imt)
         return gmvs, ruptures
 
-    def get_data(self, hazard_output, monitor):
+    def get_data(self, hazard_output, monitor, rupture):
         """
         :returns: a list with all the assets and the hazard data.
 
@@ -336,7 +314,7 @@ class BCRGetter(object):
         self.getter_orig = getter_orig
         self.getter_retro = getter_retro
 
-    def __call__(self, monitor):
+    def __call__(self, monitor, extra=None):
         orig_gen = self.getter_orig(monitor)
         retro_gen = self.getter_retro(monitor)
 

@@ -65,8 +65,7 @@ def do_event_based_bcr(unit, containers, monitor):
     """
     See `event_based_bcr` for docstring
     """
-    outputs, _stats = unit(monitor.copy('getting hazard'),
-                           monitor.copy('computing bcr'))
+    outputs, _stats = unit(monitor.copy('getting hazard'))
 
     with monitor.copy('writing results'):
         for out in outputs:

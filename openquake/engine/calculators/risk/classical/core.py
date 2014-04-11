@@ -74,7 +74,6 @@ def do_classical(unit, containers, params, monitor):
     """
 
     outputs, stats = unit(monitor.copy('getting data'),
-                          monitor.copy('computing individual risk'),
                           post_processing, params.quantiles)
 
     with monitor.copy('saving risk'):

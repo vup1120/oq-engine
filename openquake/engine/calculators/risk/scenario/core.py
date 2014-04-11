@@ -66,8 +66,7 @@ def do_scenario(unit, containers, monitor):
     See `scenario` for a description of the input parameters
     """
 
-    ((hid, outputs),), _stats = unit(monitor.copy('getting data'),
-                                     monitor.copy('computing risk'))
+    ((hid, outputs),), _stats = unit(monitor.copy('getting data'))
 
     (assets, loss_ratio_matrix, aggregate_losses,
      insured_loss_matrix, insured_losses) = outputs

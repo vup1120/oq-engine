@@ -60,8 +60,7 @@ def classical_bcr(job_id, units, containers, _params):
 
 
 def do_classical_bcr(unit, containers, monitor):
-    outputs, _stats = unit(monitor.copy('getting hazard'),
-                           monitor.copy('computing bcr'))
+    outputs, _stats = unit(monitor.copy('getting hazard'))
 
     with monitor.copy('writing results'):
         for out in outputs:
