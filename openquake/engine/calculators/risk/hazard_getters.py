@@ -67,6 +67,13 @@ class HazardGetter(object):
         """
         raise NotImplementedError
 
+    def __call__(self, monitor=None):
+        for hazard in self.hazard_outputs:
+            h = hazard.output_container
+            assets, data = self.get_data(h, monitor)
+            if assets:
+                yield hazard.id, assets, data
+
     def weights(self):
         ws = []
         for hazard in self.hazard_outputs:
@@ -151,15 +158,9 @@ class ScenarioGetter(HazardGetter):
     def get_data(self, output_container, monitor, extra=None):
         """
         :returns: a list with all the assets and the hazard data.
-
-        For scenario computations the data is a numpy.array
-        with the GMVs; for event based computations the data is
-        a pair (GMVs, rupture_ids).
         """
         all_assets = []
         all_gmvs = []
-        # dictionary site -> ({rupture_id: gmv}, n_assets)
-        # the ordering is there only to have repeatable runs
         with monitor.copy('getting gmvs'):
             for site_id, assets in self.site_assets.iteritems():
                 n_assets = len(assets)
@@ -182,28 +183,33 @@ class GroundMotionValuesGetter(ScenarioGetter):
     Hazard getter for loading ground motion values. It is instantiated
     with a set of assets all of the same taxonomy.
     """
+    def __init__(self, hazard_output, site_assets, imt, ruptures, site_ids):
+        HazardGetter.__init__(self, [hazard_output], site_assets, imt)
+        self.ruptures = ruptures
+        self.site_ids = site_ids
 
-    def get_data(self, output_container, monitor, (rupture, sitecol)):
-        """
-        :returns: a list with all the assets and the hazard data.
+    def __call__(self, monitor=None):
+        [ho] = self.hazard_outputs
+        for rupture in self.ruptures:
+            with monitor.copy('getting gmvs'):
+                gmvs = models.GmfRupture.objects.get(
+                    rupture=rupture,
+                    gmf=ho.output_container,
+                    imt__imt_str=self.imt).ground_motion_field
 
-        For scenario computations the data is a numpy.array
-        with the GMVs; for event based computations the data is
-        a pair (GMVs, rupture_ids).
-        """
-        with monitor.copy('associating assets'):
-            indices = models.ProbabilisticRupture.objects.filter(
-                rupture=rupture).site_indices
-            assets = sum([self.site_assets[site_id]
-                          for site_id in sitecol.sids[indices]], [])
+            all_assets = []
+            all_gmvs = []
+            with monitor.copy('associating assets->site'):
+                indices = models.ProbabilisticRupture.objects.get(
+                    pk=rupture.rupture_id).site_indices
+                for site_id, gmv in zip(self.site_ids[indices], gmvs):
+                    assets = self.site_assets.get(site_id)
+                    if assets:
+                        all_assets.extend(assets)
+                        array = numpy.array([gmv], dtype=float)
+                        all_gmvs.extend([array] * len(assets))
 
-        with monitor.copy('getting gmvs'):
-            gmvs = models.GmfRupture.objects.filter(
-                rupture=rupture,
-                gmf=output_container,
-                imt__imt_str=self.imt).ground_motion_field
-
-        return assets, gmvs
+            yield ho.id, all_assets, all_gmvs
 
 
 class BCRGetter(object):

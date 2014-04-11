@@ -73,8 +73,12 @@ def do_classical(unit, containers, params, monitor):
     compute mean and quantile artifacts.
     """
 
-    outputs, stats = unit(monitor.copy('getting data'),
-                          post_processing, params.quantiles)
+    outputs = unit(monitor.copy('getting data'))
+    stats = unit.workflow.statistics(
+        [out.output for out in outputs],
+        unit.getter.weights(),
+        params.quantiles,
+        post_processing)
 
     with monitor.copy('saving risk'):
         for out in outputs:

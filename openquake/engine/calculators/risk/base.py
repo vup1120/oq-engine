@@ -34,7 +34,7 @@ from django.db import connections
 def assoc_site_assets(job_id, taxonomy):
     """
     Build the dictionary associating the assets to the closest
-    hazard sites for the current exposure model and the given taxonomy
+    hazard sites for the current exposure model and the given taxonomy.
     """
     rc = models.OqJob.objects.get(pk=job_id).risk_calculation
     max_dist = rc.best_maximum_distance * 1000  # km to meters
@@ -53,7 +53,7 @@ def assoc_site_assets(job_id, taxonomy):
   GROUP BY site_id ORDER BY site_id;
    """, (max_dist, hc_id, rc.exposure_model.id, taxonomy,
          rc.region_constraint.wkt))
-    return cursor.fetchall()
+    return taxonomy, cursor.fetchall()
 
 
 class RiskCalculator(base.Calculator):
@@ -114,11 +114,11 @@ class RiskCalculator(base.Calculator):
                 raise ValueError("""Problems in calculator configuration:
                                  %s""" % error)
 
-        self.populate_site_assets()
+        self.populate_taxonomy_site_assets()
 
-    def populate_site_assets(self):
+    def populate_taxonomy_site_assets(self):
         """
-        Populate the dictionary .site_assets.
+        Populate the dictionary .taxonomy_site_assets.
         """
         n_assets = sum(self.taxonomies_asset_count.itervalues())
         logs.LOG.info('Considering %d assets of %d distinct taxonomies',
@@ -132,25 +132,24 @@ class RiskCalculator(base.Calculator):
                 for asset in models.ExposureData.objects.get_asset_chunk(
                     self.rc))
 
-        def update_dict(acc, site_asset_ids):
+        assoc_assets = set()  # assets close enough to a hazard site
+
+        def update_dict(acc, (taxonomy, site_asset_ids)):
+            acc[taxonomy] = dic = {}
             for site_id, asset_ids in site_asset_ids:
-                acc[site_id].extend(asset_ids)
+                dic[site_id] = [asset_dict[asset_id] for asset_id in asset_ids]
+                assoc_assets.add(asset_id)
             return acc
+
+        # perform the site -> assets association in parallel
         arglist = [(self.job.id, taxonomy)
                    for taxonomy in self.taxonomies_asset_count]
-        site_asset_ids = tasks.map_reduce(
-            assoc_site_assets, arglist, update_dict,
-            collections.defaultdict(list))
+        self.taxonomy_site_assets = tasks.map_reduce(
+            assoc_site_assets, arglist, update_dict, {})
 
-        self.site_assets = {}
-        ok_assets = set()  # assets close to a hazard site within the distance
-        for site_id, asset_ids in site_asset_ids.iteritems():
-            self.site_assets[site_id] = [asset_dict[asset_id]
-                                         for asset_id in asset_ids]
-            ok_assets.update(asset_ids)
-        missing_assets = set(asset_dict) - ok_assets
+        missing_assets = set(asset_dict) - assoc_assets
         if missing_assets:
-            logs.LOG.warn('%d/%d assets are too far from the hazard sites '
+            logs.LOG.warn('%d of %d assets are too far from the hazard sites '
                           'and the risk cannot be computed',
                           len(missing_assets), n_assets)
             for asset_id in missing_assets:
@@ -184,29 +183,12 @@ class RiskCalculator(base.Calculator):
         output_containers = writers.combine_builders(
             [builder(self) for builder in self.output_builders])
 
-        nblocks = int(config.get('hazard', 'concurrent_tasks'))
-        blocks = general.SequenceSplitter(nblocks).split_on_max_weight(
-            [(site_id, len(assets))
-             for site_id, assets in self.site_assets.iteritems()])
-
-        for site_ids in blocks:
-            taxonomy_site_assets = {}  # {taxonomy: {site_id: assets}}
-            for site_id in site_ids:
-                for taxonomy, assets in itertools.groupby(
-                        self.site_assets[site_id],
-                        key=operator.attrgetter('taxonomy')):
-                    if (self.rc.taxonomies_from_model and taxonomy not in
-                            self.risk_models):
-                        # ignore taxonomies not in the risk models
-                        # if the parameter taxonomies_from_model is set
-                        continue
-                    taxonomy_site_assets.setdefault(taxonomy, {})
-                    taxonomy_site_assets[taxonomy][site_id] = list(assets)
+        for taxonomy, site_assets in self.taxonomy_site_assets.iteritems():
 
             calculation_units = []
             for loss_type in models.loss_types(self.risk_models):
                 calculation_units.extend(
-                    self.calculation_units(loss_type, taxonomy_site_assets))
+                    self.calculation_units(loss_type, taxonomy, site_assets))
 
             yield [self.job.id,
                    calculation_units,
