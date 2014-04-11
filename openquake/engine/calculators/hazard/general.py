@@ -218,6 +218,9 @@ class BaseHazardCalculator(base.Calculator):
         js.num_sources = [model.get_num_sources() for model in lt_models]
         js.save()
         self.initialize_realizations()
+        with transaction.commit_on_success(using='job_init'):
+            # if you don't use a transaction errors will be eaten
+            models.Imt.save_new(self.hc.intensity_measure_types)
 
     @EnginePerformanceMonitor.monitor
     def initialize_sources(self):

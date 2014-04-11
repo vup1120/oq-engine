@@ -1536,7 +1536,6 @@ class SESCollection(djm.Model):
     lt_model = djm.OneToOneField(
         'LtSourceModel', related_name='ses_collection')
     ordinal = djm.IntegerField(null=False)
-    num_ruptures = fields.IntArrayField(null=True)
 
     class Meta:
         db_table = 'hzrdr\".\"ses_collection'
@@ -1992,6 +1991,56 @@ class _GroundMotionFieldNode(object):
         "Return lon, lat and gmv of the node in a compact string form"
         return '<X=%9.5f, Y=%9.5f, GMV=%9.7f>' % (
             self.location.x, self.location.y, self.gmv)
+
+
+class Imt(djm.Model):
+    """
+    Table with the Intensity Measure Types
+    """
+    imt_str = djm.TextField(null=False)
+    im_type = djm.TextField(choices=IMT_CHOICES)
+    sa_period = djm.FloatField(null=True)
+    sa_damping = djm.FloatField(null=True)
+
+    @classmethod
+    def get_imt_dict(cls, imt_strings=()):
+        """
+        From imt_str to Imt instances
+        """
+        return dict((imt.imt_str, imt) for imt in Imt.objects.filter())
+
+    @classmethod
+    def save_new(cls, imt_strings):
+        """
+        Save the intensity measure types not already stored in the database.
+
+        :param imt_strings: a list of unique strings
+        """
+        stored_imts = cls.get_imt_dict()
+        for imt_str in imt_strings:
+            if imt_str not in stored_imts:
+                im_type, sa_period, sa_damping = from_string(imt_str)
+                cls.objects.create(imt_str=imt_str,
+                                   im_type=im_type,
+                                   sa_period=sa_period,
+                                   sa_damping=sa_damping)
+
+    class Meta:
+        db_table = 'hzrdi\".\"imt'
+
+
+class GmfRupture(djm.Model):
+    """
+    Ground Motion Field by rupture table.
+    """
+    rupture = djm.ForeignKey('SESRupture')
+    imt = djm.ForeignKey('Imt')
+    gmf = djm.ForeignKey('Gmf')
+    ground_motion_field = fields.FloatArrayField(null=False)
+
+    class Meta:
+        db_table = 'hzrdr\".\"gmf_rupture'
+        ordering = ['gmf', 'imt']
 
 
 class GmfData(djm.Model):

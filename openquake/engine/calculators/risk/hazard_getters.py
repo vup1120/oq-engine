@@ -21,8 +21,6 @@ Hazard getters for Risk calculators.
 A HazardGetter is responsible fo getting hazard outputs needed by a risk
 calculation.
 """
-
-import collections
 import numpy
 
 from openquake.hazardlib import geo
@@ -153,12 +151,12 @@ class HazardCurveGetterPerAsset(HazardGetter):
     :attr imls:
         The intensity measure levels of the curves we are going to get.
     """
-    def get_data(self, hazard_output, monitor, extra=None):
+    def get_data(self, output_container, monitor, extra=None):
         """
         Calls ``get_by_site`` for each asset and pack the results as
         requested by the :meth:`HazardGetter.get_data` interface.
         """
-        ho = hazard_output
+        ho = output_container
 
         if ho.output.output_type == 'hazard_curve':
             imls = ho.imls
@@ -174,7 +172,7 @@ class HazardCurveGetterPerAsset(HazardGetter):
             imls = ho.imls
 
         with monitor.copy('associating assets->site'):
-            site_assets = list(self.assets_gen(hazard_output))
+            site_assets = list(self.assets_gen(output_container))
 
         all_assets, all_curves = [], []
         with monitor.copy('getting closest hazard curves'):
@@ -224,7 +222,7 @@ class ScenarioGetter(HazardGetter):
                 logs.LOG.warn('No gmvs for site %s, IMT=%s', site_id, self.imt)
         return gmvs
 
-    def get_data(self, hazard_output, monitor, extra=None):
+    def get_data(self, output_container, monitor, extra=None):
         """
         :returns: a list with all the assets and the hazard data.
 
@@ -237,13 +235,13 @@ class ScenarioGetter(HazardGetter):
         # dictionary site -> ({rupture_id: gmv}, n_assets)
         # the ordering is there only to have repeatable runs
         with monitor.copy('associating assets->site'):
-            site_assets = list(self.assets_gen(hazard_output))
+            site_assets = list(self.assets_gen(output_container))
 
-        with monitor.copy('getting gmvs and ruptures'):
+        with monitor.copy('getting gmvs'):
             for site_id, assets in site_assets:
                 n_assets = len(assets)
                 all_assets.extend(assets)
-                gmvs = self.get_gmvs(hazard_output, site_id)
+                gmvs = self.get_gmvs(output_container, site_id)
                 if gmvs:
                     array = numpy.array(gmvs)
                     all_gmvs.extend([array] * n_assets)
@@ -256,23 +254,8 @@ class GroundMotionValuesGetter(ScenarioGetter):
     Hazard getter for loading ground motion values. It is instantiated
     with a set of assets all of the same taxonomy.
     """
-    def get_gmvs_ruptures(self, gmf, site_id):
-        """
-        :returns: gmvs and ruptures for the given site and IMT
-        """
-        gmvs = []
-        ruptures = []
-        for gmf in models.GmfData.objects.filter(
-                gmf=gmf,
-                site=site_id, imt=self.imt_type, sa_period=self.sa_period,
-                sa_damping=self.sa_damping):
-            gmvs.extend(gmf.gmvs)
-            ruptures.extend(gmf.rupture_ids)
-        if not gmvs:
-            logs.LOG.warn('No gmvs for site %s, IMT=%s', site_id, self.imt)
-        return gmvs, ruptures
 
-    def get_data(self, hazard_output, monitor, rupture):
+    def get_data(self, output_container, monitor, (rupture, sitecol)):
         """
         :returns: a list with all the assets and the hazard data.
 
@@ -280,32 +263,19 @@ class GroundMotionValuesGetter(ScenarioGetter):
         with the GMVs; for event based computations the data is
         a pair (GMVs, rupture_ids).
         """
-        all_ruptures = set()
-        all_assets = []
-        all_gmvs = []
-        site_gmv = collections.OrderedDict()
-        # dictionary site -> ({rupture_id: gmv}, n_assets)
-        # the ordering is there only to have repeatable runs
-        with monitor.copy('associating assets->site'):
-            site_assets = list(self.assets_gen(hazard_output))
+        with monitor.copy('associating assets'):
+            indices = models.ProbabilisticRupture.objects.filter(
+                rupture=rupture).site_indices
+            assets = [self.asset_dict[site_id]
+                      for site_id in sitecol.sids[indices]]
 
-        with monitor.copy('getting gmvs and ruptures'):
-            for site_id, assets in site_assets:
-                n_assets = len(assets)
-                all_assets.extend(assets)
-                gmvs, ruptures = self.get_gmvs_ruptures(hazard_output, site_id)
-                site_gmv[site_id] = dict(zip(ruptures, gmvs)), n_assets
-                for r in ruptures:
-                    all_ruptures.add(r)
+        with monitor.copy('getting gmvs'):
+            gmvs = models.GmfRupture.objects.filter(
+                rupture=rupture,
+                gmf=output_container,
+                imt__imt_str=self.imt).ground_motion_field
 
-        # second pass, filling with zeros
-        with monitor.copy('filling gmvs with zeros'):
-            all_ruptures = sorted(all_ruptures)
-            for site_id, (gmv, n_assets) in site_gmv.iteritems():
-                array = numpy.array([gmv.get(r, 0.) for r in all_ruptures])
-                gmv.clear()  # save memory
-                all_gmvs.extend([array] * n_assets)
-        return all_assets, (all_gmvs, all_ruptures)
+        return assets, gmvs
 
 
 class BCRGetter(object):
