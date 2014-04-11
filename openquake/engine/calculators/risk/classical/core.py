@@ -213,31 +213,25 @@ class ClassicalRiskCalculator(base.RiskCalculator):
     output_builders = [writers.LossCurveMapBuilder,
                        writers.ConditionalLossFractionBuilder]
 
-    def calculation_unit(self, loss_type, assets):
+    def calculation_units(self, loss_type, taxonomy_site_assets):
         """
-        :returns:
-          a :class:`openquake.risklib.workflows.CalculationUnit`
-          instance for the given `loss_type` and `assets` to be run in
-          the celery task
+        Yields :class:`openquake.risklib.workflows.CalculationUnit`
+        instances for the given `loss_type` and `assets` to be run in
+        the celery task
         """
-
-        # assume all assets have the same taxonomy
-        taxonomy = assets[0].taxonomy
-        model = self.risk_models[taxonomy][loss_type]
-
-        return workflows.CalculationUnit(
-            loss_type,
-            workflows.Classical(
-                model.vulnerability_function,
-                self.rc.lrem_steps_per_interval,
-                self.rc.conditional_loss_poes,
-                self.rc.poes_disagg,
-                self.rc.insured_losses),
-            hazard_getters.HazardCurveGetterPerAsset(
-                self.rc.hazard_outputs(),
-                assets,
-                self.rc.best_maximum_distance,
-                model.imt))
+        for taxonomy, site_assets in taxonomy_site_assets.iteritems():
+            model = self.risk_models[taxonomy][loss_type]
+            yield workflows.CalculationUnit(
+                loss_type,
+                workflows.Classical(
+                    model.vulnerability_function,
+                    self.rc.lrem_steps_per_interval,
+                    self.rc.conditional_loss_poes,
+                    self.rc.poes_disagg,
+                    self.rc.insured_losses),
+                hazard_getters.HazardCurveGetterPerAsset(
+                    self.rc.hazard_outputs(),
+                    site_assets, model.imt))
 
     @property
     def calculator_parameters(self):

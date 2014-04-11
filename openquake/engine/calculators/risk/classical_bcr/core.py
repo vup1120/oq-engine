@@ -91,30 +91,26 @@ class ClassicalBCRRiskCalculator(classical.ClassicalRiskCalculator):
         super(ClassicalBCRRiskCalculator, self).__init__(job)
         self.risk_models_retrofitted = None
 
-    def calculation_unit(self, loss_type, assets):
-        taxonomy = assets[0].taxonomy
-        model_orig = self.risk_models[taxonomy][loss_type]
-        model_retro = self.risk_models_retrofitted[taxonomy][loss_type]
+    def calculation_units(self, loss_type, taxonomy_site_assets):
+        for taxonomy, site_assets in taxonomy_site_assets.iteritems():
+            model_orig = self.risk_models[taxonomy][loss_type]
+            model_retro = self.risk_models_retrofitted[taxonomy][loss_type]
 
-        return workflows.CalculationUnit(
-            loss_type,
-            workflows.ClassicalBCR(
-                model_orig.vulnerability_function,
-                model_retro.vulnerability_function,
-                self.rc.lrem_steps_per_interval,
-                self.rc.interest_rate,
-                self.rc.asset_life_expectancy),
-            hazard_getters.BCRGetter(
-                hazard_getters.HazardCurveGetterPerAsset(
-                    self.rc.hazard_outputs(),
-                    assets,
-                    self.rc.best_maximum_distance,
-                    model_orig.imt),
-                hazard_getters.HazardCurveGetterPerAsset(
-                    self.rc.hazard_outputs(),
-                    assets,
-                    self.rc.best_maximum_distance,
-                    model_retro.imt)))
+            yield workflows.CalculationUnit(
+                loss_type,
+                workflows.ClassicalBCR(
+                    model_orig.vulnerability_function,
+                    model_retro.vulnerability_function,
+                    self.rc.lrem_steps_per_interval,
+                    self.rc.interest_rate,
+                    self.rc.asset_life_expectancy),
+                hazard_getters.BCRGetter(
+                    hazard_getters.HazardCurveGetterPerAsset(
+                        self.rc.hazard_outputs(),
+                        site_assets, model_orig.imt),
+                    hazard_getters.HazardCurveGetterPerAsset(
+                        self.rc.hazard_outputs(),
+                        site_assets, model_retro.imt)))
 
     def pre_execute(self):
         """

@@ -45,7 +45,7 @@ from openquake.hazardlib import source, geo
 from openquake.hazardlib.site import Site, SiteCollection
 
 from openquake.engine.db import fields
-from openquake.engine import writer
+from openquake.engine import writer, logs
 
 # source prefiltering is enabled for #sites <= FILTERING_THRESHOLD
 FILTERING_THRESHOLD = 10000
@@ -1131,6 +1131,49 @@ class RiskCalculation(djm.Model):
     def investigation_time(self):
         return (self.risk_investigation_time or
                 self.get_hazard_calculation().investigation_time)
+
+    def get_site_assets_dict(self, monitor):
+        """
+        Build the dictionary associating the assets to the closest
+        hazard sites for the current exposure model.
+        """
+        max_dist = self.best_maximum_distance * 1000  # km to meters
+        hc_id = self.get_hazard_calculation().id
+        cursor = connections['job_init'].cursor()
+
+        with monitor.copy('getting asset chunks'):
+            asset_dict = dict(
+                (asset.id, asset)
+                for asset in ExposureData.objects.get_asset_chunk(self))
+
+        with monitor.copy('associating assets->site'):
+            cursor.execute("""
+  SELECT site_id, array_agg(asset_id ORDER BY asset_id) AS asset_ids FROM (
+  SELECT DISTINCT ON (exp.id) exp.id AS asset_id, hsite.id AS site_id
+  FROM riski.exposure_data AS exp
+  JOIN hzrdi.hazard_site AS hsite
+  ON ST_DWithin(exp.site, hsite.location, %s)
+  WHERE hsite.hazard_calculation_id = %s
+  AND exposure_model_id = %s
+  AND ST_COVERS(ST_GeographyFromText(%s), exp.site)
+  ORDER BY exp.id, ST_Distance(exp.site, hsite.location, false)) AS x
+  GROUP BY site_id ORDER BY site_id;
+       """, (max_dist, hc_id, self.exposure_model.id,
+             self.region_constraint.wkt))
+            site_asset_ids = cursor.fetchall()
+        dic = {}
+        ok_assets = set()  # assets close to a hazard site within the distance
+        for site_id, asset_ids in site_asset_ids:
+            dic[site_id] = [asset_dict[asset_id] for asset_id in asset_ids]
+            ok_assets.update(asset_ids)
+        missing_assets = set(asset_dict) - ok_assets
+        if missing_assets:
+            logs.LOG.warn('%d assets are too far from the hazard sites '
+                          'and the risk cannot be computed',
+                          len(missing_assets))
+            for asset_id in missing_assets:
+                logs.LOG.info('missing hazard for %s', asset_dict[asset_id])
+        return dic
 
 
 def _prep_geometry(kwargs):
@@ -3107,7 +3150,7 @@ class AssetManager(djm.GeoManager):
     Asset manager
     """
 
-    def get_asset_chunk(self, rc, taxonomy, offset, size):
+    def get_asset_chunk(self, rc, taxonomy=None, offset=0, size=None):
         """
         :returns:
 
@@ -3122,7 +3165,6 @@ class AssetManager(djm.GeoManager):
            occupants value for the risk calculation given in input and the cost
            for each cost type considered in `rc`
         """
-
         query, args = self._get_asset_chunk_query_args(
             rc, taxonomy, offset, size)
         return list(self.raw(query, args))
@@ -3132,14 +3174,18 @@ class AssetManager(djm.GeoManager):
         Build a parametric query string and the corresponding args for
         #get_asset_chunk
         """
-        args = (rc.exposure_model.id, taxonomy,
-                "SRID=4326; %s" % rc.region_constraint.wkt)
+        if taxonomy:
+            args = (rc.exposure_model.id, taxonomy,
+                    "SRID=4326; %s" % rc.region_constraint.wkt)
+        else:
+            args = (rc.exposure_model.id,
+                    "SRID=4326; %s" % rc.region_constraint.wkt)
 
         people_field, occupants_cond, occupancy_join, occupants_args = (
             self._get_people_query_helper(
                 rc.exposure_model.category, rc.time_event))
 
-        args += occupants_args + (size, offset)
+        args += occupants_args + (offset,)
 
         cost_type_fields, cost_type_joins = self._get_cost_types_query_helper(
             rc.exposure_model.costtype_set.all())
@@ -3152,19 +3198,21 @@ class AssetManager(djm.GeoManager):
             {occupancy_join}
             ON riski.exposure_data.id = riski.occupancy.exposure_data_id
             {costs_join}
-            WHERE exposure_model_id = %s AND
-                  taxonomy = %s AND
-                  ST_COVERS(ST_GeographyFromText(%s), site) AND
+            WHERE exposure_model_id = %s {taxonomy_cond}
+                  AND ST_COVERS(ST_GeographyFromText(%s), site) AND
                   {occupants_cond}
             GROUP BY riski.exposure_data.id
             ORDER BY ST_X(geometry(site)), ST_Y(geometry(site))
-            LIMIT %s OFFSET %s
+            OFFSET %s
             """.format(people_field=people_field,
                        occupants_cond=occupants_cond,
+                       taxonomy_cond='AND taxonomy=%s' if taxonomy else '',
                        costs=cost_type_fields,
                        costs_join=cost_type_joins,
                        occupancy_join=occupancy_join)
-
+        if size is not None:
+            query += ' LIMIT %s'
+            args += (size,)
         return query, args
 
     def _get_people_query_helper(self, category, time_event):
