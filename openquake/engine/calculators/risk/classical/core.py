@@ -30,7 +30,7 @@ from openquake.engine.utils import tasks
 
 
 @tasks.oqtask
-def classical(job_id, units, containers, params):
+def classical(job_id, units, outputdict, params):
     """
     Celery task for the classical risk calculator.
 
@@ -38,7 +38,7 @@ def classical(job_id, units, containers, params):
       ID of the currently running job
     :param list units:
       A list of :class:`openquake.risklib.workflows.CalculationUnit` instances
-    :param containers:
+    :param outputdict:
       An instance of :class:`..writers.OutputDict` containing
       output container instances (e.g. a LossCurve)
     :param params:
@@ -53,12 +53,12 @@ def classical(job_id, units, containers, params):
         for unit in units:
             do_classical(
                 unit,
-                containers.with_args(loss_type=unit.loss_type),
+                outputdict.with_args(loss_type=unit.loss_type),
                 params,
                 monitor)
 
 
-def do_classical(unit, containers, params, monitor):
+def do_classical(unit, outputdict, params, monitor):
     """
     See `classical` for a description of the parameters.
 
@@ -83,20 +83,20 @@ def do_classical(unit, containers, params, monitor):
     with monitor.copy('saving risk'):
         for out in outputs:
             save_individual_outputs(
-                containers.with_args(hazard_output_id=out.hid),
+                outputdict.with_args(hazard_output_id=out.hid),
                 out.output, params)
 
         if stats is not None:
             save_statistical_output(
-                containers.with_args(hazard_output_id=None), stats, params)
+                outputdict.with_args(hazard_output_id=None), stats, params)
 
 
-def save_individual_outputs(containers, outs, params):
+def save_individual_outputs(outputdict, outs, params):
     """
     Save loss curves, loss maps and loss fractions associated with a
     calculation unit
 
-    :param containers:
+    :param outputdict:
         a :class:`openquake.engine.calculators.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param outs:
@@ -107,38 +107,38 @@ def save_individual_outputs(containers, outs, params):
         holding the parameters for this calculation
     """
 
-    containers.write(
+    outputdict.write(
         outs.assets,
         (outs.loss_curves, outs.average_losses),
         output_type="loss_curve")
 
     if outs.insured_curves is not None:
-        containers.write(
+        outputdict.write(
             outs.assets,
             (outs.insured_curves, outs.average_insured_losses),
             insured=True,
             output_type="loss_curve")
 
-    containers.write_all(
+    outputdict.write_all(
         "poe", params.conditional_loss_poes,
         outs.loss_maps,
         outs.assets,
         output_type="loss_map")
 
     taxonomies = [a.taxonomy for a in outs.assets]
-    containers.write_all(
+    outputdict.write_all(
         "poe", params.poes_disagg,
         outs.loss_fractions, outs.assets, taxonomies,
         output_type="loss_fraction", variable="taxonomy")
 
 
-def save_statistical_output(containers, stats, params):
+def save_statistical_output(outputdict, stats, params):
     """
     Save statistical outputs (mean and quantile loss curves, mean and
     quantile loss maps, mean and quantile loss fractions) for the
     calculation.
 
-    :param containers:
+    :param outputdict:
         a :class:`openquake.engine.calculators.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param outs:
@@ -150,16 +150,16 @@ def save_statistical_output(containers, stats, params):
     """
 
     # mean curves, maps and fractions
-    containers.write(
+    outputdict.write(
         stats.assets, (stats.mean_curves, stats.mean_average_losses),
         output_type="loss_curve", statistics="mean")
 
-    containers.write_all("poe", params.conditional_loss_poes,
+    outputdict.write_all("poe", params.conditional_loss_poes,
                          stats.mean_maps, stats.assets,
                          output_type="loss_map",
                          statistics="mean")
 
-    containers.write_all("poe", params.poes_disagg,
+    outputdict.write_all("poe", params.poes_disagg,
                          stats.mean_fractions,
                          stats.assets,
                          [a.taxonomy for a in stats.assets],
@@ -167,19 +167,19 @@ def save_statistical_output(containers, stats, params):
                          variable="taxonomy")
 
     # quantile curves, maps and fractions
-    containers.write_all(
+    outputdict.write_all(
         "quantile", params.quantiles,
         [(c, a) for c, a in itertools.izip(
             stats.quantile_curves, stats.quantile_average_losses)],
         stats.assets, output_type="loss_curve", statistics="quantile")
 
     for quantile, maps in zip(params.quantiles, stats.quantile_maps):
-        containers.write_all("poe", params.conditional_loss_poes, maps,
+        outputdict.write_all("poe", params.conditional_loss_poes, maps,
                              stats.assets, output_type="loss_map",
                              statistics="quantile", quantile=quantile)
 
     for quantile, fractions in zip(params.quantiles, stats.quantile_fractions):
-        containers.write_all("poe", params.poes_disagg, fractions,
+        outputdict.write_all("poe", params.poes_disagg, fractions,
                              stats.assets, [a.taxonomy for a in stats.assets],
                              output_type="loss_fraction",
                              statistics="quantile", quantile=quantile,
@@ -187,12 +187,12 @@ def save_statistical_output(containers, stats, params):
 
     # mean and quantile insured curves
     if stats.mean_insured_curves is not None:
-        containers.write(
+        outputdict.write(
             stats.assets, (stats.mean_insured_curves,
                            stats.mean_average_insured_losses),
             output_type="loss_curve", statistics="mean", insured=True)
 
-        containers.write_all(
+        outputdict.write_all(
             "quantile", params.quantiles,
             [(c, a) for c, a in itertools.izip(
                 stats.quantile_insured_curves,

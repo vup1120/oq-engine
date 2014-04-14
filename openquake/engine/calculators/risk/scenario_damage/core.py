@@ -35,14 +35,14 @@ from openquake.engine import logs
 
 
 @tasks.oqtask
-def scenario_damage(job_id, units, containers, params):
+def scenario_damage(job_id, units, outputdict, params):
     """
     Celery task for the scenario damage risk calculator.
 
     :param int job_id:
       ID of the currently running job
     :param list units:
-    :param containers:
+    :param outputdict:
       An instance of :class:`..writers.OutputDict` containing
       output container instances (in this case only `LossMap`)
     :param params:
@@ -54,8 +54,8 @@ def scenario_damage(job_id, units, containers, params):
     monitor = EnginePerformanceMonitor(
         None, job_id, scenario_damage, tracing=True)
 
-    # in scenario damage calculation we have NO containers
-    assert len(containers) == 0
+    # in scenario damage calculation we have NO outputdict
+    assert len(outputdict) == 0
 
     with db.transaction.commit_on_success(using='job_init'):
         return [do_scenario_damage(unit, params, monitor) for unit in units]

@@ -177,10 +177,10 @@ class RiskCalculator(base.Calculator):
             1. the job id
             2. a getter object needed to get the hazard data
             3. the needed risklib calculators
-            4. the output containers to be populated
+            4. the outputdict to be populated
             5. the specific calculator parameter set
         """
-        output_containers = writers.combine_builders(
+        outputdict = writers.combine_builders(
             [builder(self) for builder in self.output_builders])
 
         for taxonomy, site_assets in self.taxonomy_site_assets.iteritems():
@@ -192,7 +192,7 @@ class RiskCalculator(base.Calculator):
 
             yield [self.job.id,
                    calculation_units,
-                   output_containers,
+                   outputdict,
                    self.calculator_parameters]
 
     def _get_outputs_for_export(self):

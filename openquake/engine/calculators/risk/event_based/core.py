@@ -38,7 +38,7 @@ from openquake.engine.utils import tasks, general, config
 
 
 @tasks.oqtask
-def event_based(job_id, units, containers, params):
+def event_based(job_id, units, outputdict, params):
     """
     Celery task for the event based risk calculator.
 
@@ -46,7 +46,7 @@ def event_based(job_id, units, containers, params):
         :class:`openquake.engine.db.models.OqJob`
     :param dict units:
       A list of :class:`openquake.risklib.workflows.CalculationUnit` instances
-    :param containers:
+    :param outputdict:
       An instance of :class:`..writers.OutputDict` containing
       output container instances (e.g. a LossCurve)
     :param params:
@@ -64,12 +64,12 @@ def event_based(job_id, units, containers, params):
     with db.transaction.commit_on_success(using='job_init'):
         for unit in units:
             event_loss_tables[unit.loss_type] = do_event_based(
-                unit, containers.with_args(loss_type=unit.loss_type),
+                unit, outputdict.with_args(loss_type=unit.loss_type),
                 params, monitor)
     return event_loss_tables
 
 
-def do_event_based(unit, containers, params, monitor):
+def do_event_based(unit, outputdict, params, monitor):
     """
     See `event_based` for a description of the params
 
@@ -99,24 +99,24 @@ def do_event_based(unit, containers, params, monitor):
 
         with monitor.copy('saving individual risk'):
             save_individual_outputs(
-                containers.with_args(hazard_output_id=out.hid),
+                outputdict.with_args(hazard_output_id=out.hid),
                 out.output, disagg_outputs, params)
 
     if stats:
         with monitor.copy('saving risk statistics'):
             save_statistical_output(
-                containers.with_args(hazard_output_id=None), stats, params)
+                outputdict.with_args(hazard_output_id=None), stats, params)
         return stats.event_loss_table
     else:
         return outputs[0].output.event_loss_table
 
 
-def save_individual_outputs(containers, outputs, disagg_outputs, params):
+def save_individual_outputs(outputdict, outputs, disagg_outputs, params):
     """
     Save loss curves, loss maps and loss fractions associated with a
     calculation unit
 
-    :param containers:
+    :param outputdict:
         a :class:`openquake.engine.calculators.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param outputs:
@@ -130,12 +130,12 @@ def save_individual_outputs(containers, outputs, disagg_outputs, params):
         holding the parameters for this calculation
     """
 
-    containers.write(
+    outputdict.write(
         outputs.assets,
         (outputs.loss_curves, outputs.average_losses, outputs.stddev_losses),
         output_type="event_loss_curve")
 
-    containers.write_all(
+    outputdict.write_all(
         "poe", params.conditional_loss_poes,
         outputs.loss_maps,
         outputs.assets,
@@ -144,32 +144,32 @@ def save_individual_outputs(containers, outputs, disagg_outputs, params):
     if disagg_outputs is not None:
         # FIXME. We should avoid synthetizing the generator
         assets = list(disagg_outputs.assets_disagg)
-        containers.write(
+        outputdict.write(
             assets,
             disagg_outputs.magnitude_distance,
             disagg_outputs.fractions,
             output_type="loss_fraction",
             variable="magnitude_distance")
-        containers.write(
+        outputdict.write(
             assets,
             disagg_outputs.coordinate, disagg_outputs.fractions,
             output_type="loss_fraction",
             variable="coordinate")
 
     if outputs.insured_curves is not None:
-        containers.write(
+        outputdict.write(
             outputs.assets,
             (outputs.insured_curves, outputs.average_insured_losses,
              outputs.stddev_insured_losses),
             output_type="event_loss_curve", insured=True)
 
 
-def save_statistical_output(containers, stats, params):
+def save_statistical_output(outputdict, stats, params):
     """
     Save statistical outputs (mean and quantile loss curves, mean and
     quantile loss maps) for the calculation.
 
-    :param containers:
+    :param outputdict:
         a :class:`openquake.engine.calculators.risk.writers.OutputDict`
         instance holding the reference to the output container objects
     :param stats:
@@ -181,16 +181,16 @@ def save_statistical_output(containers, stats, params):
         holding the parameters for this calculation
     """
 
-    containers.write(
+    outputdict.write(
         stats.assets, (stats.mean_curves, stats.mean_average_losses),
         output_type="loss_curve", statistics="mean")
 
-    containers.write_all(
+    outputdict.write_all(
         "poe", params.conditional_loss_poes, stats.mean_maps,
         stats.assets, output_type="loss_map", statistics="mean")
 
     # quantile curves and maps
-    containers.write_all(
+    outputdict.write_all(
         "quantile", params.quantiles,
         [(c, a) for c, a in itertools.izip(stats.quantile_curves,
                                            stats.quantile_average_losses)],
@@ -198,19 +198,19 @@ def save_statistical_output(containers, stats, params):
 
     if params.quantiles:
         for quantile, maps in zip(params.quantiles, stats.quantile_maps):
-            containers.write_all(
+            outputdict.write_all(
                 "poe", params.conditional_loss_poes, maps,
                 stats.assets, output_type="loss_map",
                 statistics="quantile", quantile=quantile)
 
     # mean and quantile insured curves
     if stats.mean_insured_curves is not None:
-        containers.write(
+        outputdict.write(
             stats.assets, (stats.mean_insured_curves,
                            stats.mean_average_insured_losses),
             output_type="loss_curve", statistics="mean", insured=True)
 
-        containers.write_all(
+        outputdict.write_all(
             "quantile", params.quantiles,
             [(c, a) for c, a in itertools.izip(
                 stats.quantile_insured_curves,
@@ -322,11 +322,11 @@ class EventBasedRiskCalculator(base.RiskCalculator):
             1. the job id
             2. a getter object needed to get the hazard data
             3. the needed risklib calculators
-            4. the output containers to be populated
+            4. the output outputdict to be populated
             5. the specific calculator parameter set
         """
         nblocks = int(config.get('hazard', 'concurrent_tasks'))
-        output_containers = writers.combine_builders(
+        output_outputdict = writers.combine_builders(
             [builder(self) for builder in self.output_builders])
         gmf_outputs = self.rc.hazard_outputs()
         ses_collections = set(ho.gmf.lt_realization.lt_model.ses_collection
@@ -349,7 +349,7 @@ class EventBasedRiskCalculator(base.RiskCalculator):
 
                     yield [self.job.id,
                            calculation_units,
-                           output_containers,
+                           output_outputdict,
                            self.calculator_parameters]
 
     def task_completed(self, event_loss_tables):

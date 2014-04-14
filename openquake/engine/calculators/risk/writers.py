@@ -249,11 +249,11 @@ def total_damage_distribution(fractions, dmg_state_ids):
 
 OutputKey = collections.namedtuple('OutputKey', [
     'output_type',  # as in :class:`openquake.engine.db.models.Output`
-    'loss_type',  # as in risk output containers
-    'hazard_output_id',  # as in risk output containers
+    'loss_type',  # as in risk output outputdict
+    'hazard_output_id',  # as in risk outputdict
     'poe',  # for loss map and classical loss fractions
     'quantile',  # for quantile outputs
-    'statistics',  # as in risk output containers
+    'statistics',  # as in risk outputdict
     'variable',  # for disaggregation outputs
     'insured',  # as in :class:`openquake.engine.db.models.LossCurve`
 ])
@@ -407,7 +407,7 @@ def combine_builders(builders):
 
 class LossCurveMapBuilder(OutputBuilder):
     """
-    Create output containers for Loss Curves, Insured Loss Curves and
+    Create outputdict for Loss Curves, Insured Loss Curves and
     Loss Maps
     """
     LOSS_CURVE_TYPE = "loss_curve"

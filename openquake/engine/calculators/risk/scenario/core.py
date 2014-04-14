@@ -31,7 +31,7 @@ from openquake.engine.utils import tasks
 
 
 @tasks.oqtask
-def scenario(job_id, units, containers, _params):
+def scenario(job_id, units, outputdict, _params):
     """
     Celery task for the scenario risk calculator.
 
@@ -39,7 +39,7 @@ def scenario(job_id, units, containers, _params):
       ID of the currently running job
     :param list units:
       A list of :class:`openquake.risklib.workflows.CalculationUnit` instances
-    :param containers:
+    :param outputdict:
       An instance of :class:`..writers.OutputDict` containing
       output container instances (in this case only `LossMap`)
     :param params:
@@ -54,14 +54,14 @@ def scenario(job_id, units, containers, _params):
         for unit in units:
             agg[unit.loss_type], insured[unit.loss_type] = do_scenario(
                 unit,
-                containers.with_args(
+                outputdict.with_args(
                     loss_type=unit.loss_type,
                     output_type="loss_map"),
                 monitor)
     return agg, insured
 
 
-def do_scenario(unit, containers, monitor):
+def do_scenario(unit, outputdict, monitor):
     """
     See `scenario` for a description of the input parameters
     """
@@ -73,7 +73,7 @@ def do_scenario(unit, containers, monitor):
      insured_loss_matrix, insured_losses) = outputs
 
     with monitor.copy('saving risk outputs'):
-        containers.write(
+        outputdict.write(
             assets,
             loss_ratio_matrix.mean(axis=1),
             loss_ratio_matrix.std(ddof=1, axis=1),
@@ -81,7 +81,7 @@ def do_scenario(unit, containers, monitor):
             insured=False)
 
         if insured_loss_matrix is not None:
-            containers.write(
+            outputdict.write(
                 assets,
                 insured_loss_matrix.mean(axis=1),
                 insured_loss_matrix.std(ddof=1, axis=1),
