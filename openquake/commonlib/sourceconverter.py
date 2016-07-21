@@ -382,9 +382,10 @@ class RuptureConverter(object):
             convert_rupture = getattr(self, 'convert_' + striptag(node.tag))
             mag = ~node.magnitude
             rake = ~node.rake
+            slip = ~node.slip
             h = node.hypocenter
             hypocenter = geo.Point(h['lon'], h['lat'], h['depth'])
-        return convert_rupture(node, mag, rake, hypocenter)
+        return convert_rupture(node, mag, rake, hypocenter, slip)
 
     def geo_line(self, edge):
         """
@@ -463,7 +464,7 @@ class RuptureConverter(object):
             surface = geo.MultiSurface(planar_surfaces)
         return surface
 
-    def convert_simpleFaultRupture(self, node, mag, rake, hypocenter):
+    def convert_simpleFaultRupture(self, node, mag, rake, hypocenter, slip):
         """
         Convert a simpleFaultRupture node.
 
@@ -478,6 +479,7 @@ class RuptureConverter(object):
             mag=mag, rake=rake, tectonic_region_type=None,
             hypocenter=hypocenter,
             surface=self.convert_surfaces(surfaces),
+            rupture_slip_direction=slip,
             source_typology=source.SimpleFaultSource,
             surface_nodes=surfaces)
         return rupt
@@ -773,6 +775,15 @@ class SourceConverter(RuptureConverter):
             a :class:`openquake.hazardlib.source.CharacteristicFaultSource`
             instance
         """
+        try:
+            hypo_list = valid.hypo_list(node.hypoList)
+        except NameError:
+            hypo_list = ()
+        try:
+            slip_list = valid.slip_list(node.slipList)
+        except NameError:
+            slip_list = ()
+
         char = source.CharacteristicFaultSource(
             source_id=node['id'],
             name=node['name'],
@@ -781,7 +792,9 @@ class SourceConverter(RuptureConverter):
             surface=self.convert_surfaces(node.surface),
             rake=~node.rake,
             temporal_occurrence_model=self.tom,
-            surface_node=node.surface)
+            surface_node=node.surface,
+            hypo_list=hypo_list,
+            slip_list=slip_list)
         return char
 
     def convert_nonParametricSeismicSource(self, node):
