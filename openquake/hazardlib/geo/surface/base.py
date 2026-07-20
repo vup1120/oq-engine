@@ -238,16 +238,19 @@ class BaseSurface(metaclass=abc.ABCMeta):
 
         return dst
 
-    def get_x_l_ratio(self, mesh):
+    def _tor_projection(self, mesh):
         """
-        Compute normalized along-strike position (x/L) for each point in
-        ``mesh`` relative to the surface trace. Used for PFDHA applications.
+        Project each point of ``mesh`` onto the top-of-rupture trace
+        polyline (see :meth:`_get_tor`) in a local Cartesian km frame,
+        in one sweep shared by the FDHA distance metrics.
 
         :param mesh:
             :class:`~openquake.hazardlib.geo.mesh.Mesh` of target points.
         :returns:
-            Tuple (x_over_l, l_km) where x_over_l is numpy array in [0,1]
-            and l_km is trace length in km.
+            Tuple (dists, x_ratios, l_km): clipped point-to-polyline
+            distances in km, normalized along-strike positions in [0, 1]
+            and the geodetic trace length in km. For a degenerate trace
+            (fewer than 2 distinct vertices) dists and x_ratios are zeros.
         """
         trace = self._get_tor()
         site_lons = mesh.lons.flatten()
@@ -255,7 +258,7 @@ class BaseSurface(metaclass=abc.ABCMeta):
         n_sites = len(site_lons)
 
         if trace.shape[0] < 2:
-            return numpy.zeros(n_sites), 0.0
+            return numpy.zeros(n_sites), numpy.zeros(n_sites), 0.0
 
         # Compute geodetic trace length
         seg_lengths_km = geodetic.geodetic_distance(
@@ -278,9 +281,6 @@ class BaseSurface(metaclass=abc.ABCMeta):
         seg_lens = numpy.sqrt(seg_lens_sq)
         cumul = numpy.concatenate([[0.0], numpy.cumsum(seg_lens)])
         l_proj = cumul[-1]
-
-        if l_proj == 0.0:
-            return numpy.zeros(n_sites), l_km
 
         # Vectorized point-to-polyline projection
         site_pts = numpy.column_stack([si_x, si_y])[:, numpy.newaxis, :]
@@ -307,14 +307,70 @@ class BaseSurface(metaclass=abc.ABCMeta):
             d_sq[:, zero_mask] = vec_sq[:, zero_mask]
             t[:, zero_mask] = 0.0
 
-        # Find closest segment and compute x/L
+        # Find closest segment; distance and x/L come from the same sweep
         min_indices = numpy.argmin(d_sq, axis=1)
         rows = numpy.arange(n_sites)
+        dists = numpy.sqrt(d_sq[rows, min_indices])
+
+        if l_proj == 0.0:  # all trace vertices coincide
+            return dists, numpy.zeros(n_sites), l_km
+
         best_t = t[rows, min_indices]
         x_best = cumul[min_indices] + best_t * seg_lens[min_indices]
         x_ratios = x_best / l_proj
         numpy.clip(x_ratios, 0.0, 1.0, out=x_ratios)
+        return dists, x_ratios, l_km
+
+    def get_x_l_ratio(self, mesh):
+        """
+        Compute normalized along-strike position (x/L) for each point in
+        ``mesh`` relative to the surface trace. Used for PFDHA applications.
+
+        :param mesh:
+            :class:`~openquake.hazardlib.geo.mesh.Mesh` of target points.
+        :returns:
+            Tuple (x_over_l, l_km) where x_over_l is numpy array in [0,1]
+            and l_km is trace length in km.
+        """
+        _dists, x_ratios, l_km = self._tor_projection(mesh)
         return x_ratios, l_km
+
+    def get_tor_distance(self, mesh):
+        """
+        Compute the horizontal distance (``rtor``, in km) from each point
+        of ``mesh`` to the top-of-rupture trace polyline. Used for PFDHA
+        applications.
+
+        Unlike ``rjb`` this is the distance to the surface-rupture trace,
+        not to the surface projection of the whole rupture (rjb is zero
+        above a dipping fault plane); unlike ``|rx|`` it is clipped at the
+        rupture ends rather than measured against the extended strike
+        line.
+
+        :param mesh:
+            :class:`~openquake.hazardlib.geo.mesh.Mesh` of target points.
+        :returns:
+            Numpy array of distances in km.
+        """
+        dists, _x_ratios, _l_km = self._tor_projection(mesh)
+        return dists
+
+    def get_tor_length(self):
+        """
+        :returns:
+            The geodetic length (in km) of the top-of-rupture trace,
+            consistent with the ``l_km`` returned by
+            :meth:`get_x_l_ratio`. Used as the FDHA rupture parameter
+            ``length``.
+        """
+        trace = self._get_tor()
+        if trace.shape[0] < 2:
+            return 0.0
+        seg_lengths_km = geodetic.geodetic_distance(
+            trace[:-1, 0], trace[:-1, 1],
+            trace[1:, 0], trace[1:, 1]
+        )
+        return float(numpy.sum(seg_lengths_km))
 
     def get_rx_distance(self, mesh):
         """

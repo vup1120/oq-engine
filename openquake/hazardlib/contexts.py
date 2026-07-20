@@ -60,7 +60,7 @@ TWO24 = 2**24
 TWO32 = 2**32
 STD_TYPES = (StdDev.TOTAL, StdDev.INTER_EVENT, StdDev.INTRA_EVENT)
 KNOWN_DISTANCES = frozenset('''rrup rx_ry0 rx ry0 rjb rhypo repi rcdpp azimuth
-azimuthcp rvolc clon_clat clon clat'''.split())
+azimuthcp rvolc clon_clat clon clat rtor x_l'''.split())
 NUM_BINS = 256
 DIST_BINS = sqrscale(80, 1000, NUM_BINS)
 MEA = 0
@@ -100,8 +100,8 @@ def set_distances(ctx, rup, r_sites, param, dparam, mask, tu):
     if not dparam:
         # no multifault
         dists = get_distances(rup, r_sites, param)
-        if '_' in param:
-            p0, p1 = param.split('_')  # clon_clat
+        if param in ('clon_clat', 'rx_ry0'):  # paired distances
+            p0, p1 = param.split('_')
             setattr(ctx, p0, dists[:, 0])
             setattr(ctx, p1, dists[:, 1])
         else:
@@ -139,6 +139,11 @@ def set_distances(ctx, rup, r_sites, param, dparam, mask, tu):
             # shape (numsites, 3)
             ctx['clon'] = m.lons
             ctx['clat'] = m.lats
+        elif param in ('rtor', 'x_l'):
+            # FDHA distances are not in the section cache; compute them
+            # directly on the MultiSurface (x_l raises NotImplementedError
+            # until the Phase 2 multi-fault reference lines)
+            setattr(ctx, param, get_distances(rup, r_sites, param))
 
 
 def round_dist(dst):
@@ -236,7 +241,9 @@ def kround1(ctx, kfields):
     out = numpy.zeros(len(ctx), [(k, ctx.dtype[k]) for k in kfields])
     for kfield in kfields:
         kval = ctx[kfield]
-        if kfield == 'vs30':
+        if kfield == 'x_l':  # in [0, 1], must not be rounded to km
+            out[kfield] = numpy.round(kval, 2)
+        elif kfield == 'vs30':
             out[kfield][close] = numpy.round(kval[close])  # round less
             out[kfield][far] = numpy.round(kval[far], 1)  # round more
         elif kval.dtype == F64 and kfield != 'mag':
@@ -256,6 +263,8 @@ def kround2(ctx, kfields):
         kval = ctx[kfield]
         if kfield == 'rx':   # can be negative
             out[kfield] = numpy.round(kval)
+        elif kfield == 'x_l':  # in [0, 1], must not be rounded to km
+            out[kfield] = numpy.round(kval, 2)
         elif kfield in KNOWN_DISTANCES:
             out[kfield][close] = numpy.ceil(kval[close])  # round to 1 km
             out[kfield][far] = round_dist(kval[far])  # round more
@@ -404,6 +413,8 @@ def _get_ctx_planar(cmaker, builder, mag, mrate, magi, planar, sites,
             ctxt[par] = mrate * planar.wlr[:, 2]  # shape U-> (N, U)
         elif par == 'width':
             ctxt[par] = planar.wlr[:, 0]
+        elif par == 'length':
+            ctxt[par] = planar.wlr[:, 1]
         elif par == 'strike':
             ctxt[par] = planar.sdr[:, 0]
         elif par == 'dip':
@@ -896,6 +907,13 @@ class ContextMaker(object):
                     value = msparam['width']
                 else:
                     value = rup.surface.get_width()
+            elif param == 'length':
+                # FDHA rupture parameter: length (in km) of the
+                # top-of-rupture trace, same source as get_x_l_ratio's L
+                if rup.surface:
+                    value = rup.surface.get_tor_length()
+                else:
+                    value = 0.0
             elif param == 'in_cshm':
                 # used in McVerry and Bradley GMPEs
                 if rup.surface:
@@ -1732,7 +1750,7 @@ class RuptureContext(BaseContext):
     rup_id = 0
     _slots_ = (
         'mag', 'strike', 'dip', 'rake', 'ztor', 'hypo_lon', 'hypo_lat',
-        'hypo_depth', 'width', 'hypo_loc', 'src_id', 'rup_id')
+        'hypo_depth', 'width', 'length', 'hypo_loc', 'src_id', 'rup_id')
 
     def __init__(self, param_pairs=()):
         for param, value in param_pairs:

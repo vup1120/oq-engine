@@ -67,6 +67,10 @@ def get_dparam(surface, sites, param):
         dist = surface.get_rx_distance(sites)
     elif param == 'ry0':
         dist = surface.get_ry0_distance(sites)
+    elif param == 'rtor':
+        dist = surface.get_tor_distance(sites)
+    elif param == 'x_l':
+        dist, _l_km = surface.get_x_l_ratio(sites)
     else:
         raise ValueError('Unknown distance measure %r' % param)
     return dist
@@ -86,6 +90,13 @@ def get_distances(rupture, sites, param):
             dist = numpy.empty((len(sites), 2))
             dist[:, 0] = rupture.hypocenter.x
             dist[:, 1] = rupture.hypocenter.y
+        elif param == 'rtor':
+            # the trace degenerates to the epicenter
+            dist = rupture.hypocenter.distance_to_mesh(
+                sites, with_depths=False)
+        elif param == 'x_l':
+            # along-strike position is undefined without a trace
+            dist = numpy.zeros(len(sites))
         else:
             dist = rupture.hypocenter.distance_to_mesh(sites)
     elif param == 'rrup':
@@ -108,6 +119,10 @@ def get_distances(rupture, sites, param):
         dist = surf.get_azimuth_of_closest_point(sites)
     elif param == 'clon_clat':
         dist = get_dparam(surf, sites, param)
+    elif param == 'rtor':
+        dist = get_dparam(surf, sites, 'rtor')
+    elif param == 'x_l':
+        dist = get_dparam(surf, sites, 'x_l')
     elif param == "rvolc":
         # Volcanic distance not yet supported, defaulting to zero
         dist = numpy.zeros_like(sites.lons)

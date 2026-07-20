@@ -233,6 +233,54 @@ class MultiSurface(BaseSurface):
         """
         return self.msparam['ztor']
 
+    # Sections whose top edge is deeper than this do not break the surface
+    # and are excluded from the FDHA surface-rupture trace distance (same
+    # value as oq-pfdha's SURFACE_DEPTH_TOLERANCE_KM)
+    SURFACE_DEPTH_TOLERANCE_KM = 0.01
+
+    def _surface_reaching(self):
+        """
+        :returns: the sub-surfaces whose top edge reaches the topographic
+            surface (all sub-surfaces if none does)
+        """
+        surfs = [surf for surf in self.surfaces
+                 if surf.get_top_edge_depth() <=
+                 self.SURFACE_DEPTH_TOLERANCE_KM]
+        return surfs or list(self.surfaces)
+
+    def get_tor_distance(self, mesh):
+        """
+        For each point in ``mesh`` compute the distance to the
+        top-of-rupture trace of each surface-reaching section and return
+        the smallest value (the fdha 'segments' reference-line semantics:
+        gaps between sections are not bridged, buried sections do not
+        attract the distance).
+        See :meth:`superclass method <.base.BaseSurface.get_tor_distance>`
+        for spec of input and result values.
+        """
+        dists = [surf.get_tor_distance(mesh)
+                 for surf in self._surface_reaching()]
+        return np.min(dists, axis=0)
+
+    def get_tor_length(self):
+        """
+        :returns: the total geodetic length (in km) of the top-of-rupture
+            traces of the surface-reaching sections (fdha 'segments'
+            semantics), consistent with :meth:`get_tor_distance`.
+        """
+        return float(sum(surf.get_tor_length()
+                         for surf in self._surface_reaching()))
+
+    def get_x_l_ratio(self, mesh):
+        """
+        Not implemented for multi-fault surfaces: the normalized
+        along-strike position over disjoint sections requires a
+        multi-fault reference line (ECS/LCP), deferred to FDHA Phase 2.
+        """
+        raise NotImplementedError(
+            'x_l on a MultiSurface requires a multi-fault reference line '
+            '(FDHA Phase 2)')
+
     def get_strike(self):
         """
         Compute strike of each surface element and return area-weighted average

@@ -561,3 +561,111 @@ class GetXLRatioTestCase(unittest.TestCase):
 
         # Total trace length ≈ 33.9 km
         self.assertAlmostEqual(L_km, 33.9, delta=0.2)
+
+class GetTorDistanceTestCase(unittest.TestCase):
+    """Tests for get_tor_distance() (the FDHA `rtor` distance)."""
+
+    def _make_surface(self, dip=90.0):
+        # N-S trace along the Greenwich meridian, 0.0N to 1.0N
+        trace = Line([Point(0.0, 0.0), Point(0.0, 1.0)])
+        return SimpleFaultSurface.from_fault_data(
+            trace, upper_seismogenic_depth=0.0,
+            lower_seismogenic_depth=10.0, dip=dip, mesh_spacing=0.5)
+
+    def test_site_beside_trace(self):
+        # site at 0.1 deg east of the trace midpoint: rtor is the
+        # perpendicular distance to the trace (~11.1 km)
+        surface = self._make_surface()
+        mesh = Mesh(numpy.array([0.1]), numpy.array([0.5]), depths=None)
+        rtor = surface.get_tor_distance(mesh)
+        self.assertAlmostEqual(rtor[0], 11.13, delta=0.05)
+
+    def test_site_off_trace_end(self):
+        # site 0.2 deg north of the northern trace tip: the clipped
+        # distance is to the tip itself (~22.2 km), unlike |rx| which is
+        # measured against the extended strike line (and is ~0 here).
+        # The tolerance covers the mesh-resampled top edge falling short
+        # of the exact trace tip by up to the mesh spacing (0.5 km)
+        surface = self._make_surface()
+        mesh = Mesh(numpy.array([0.0]), numpy.array([1.2]), depths=None)
+        rtor = surface.get_tor_distance(mesh)
+        self.assertAlmostEqual(rtor[0], 22.25, delta=0.5)
+        rx = surface.get_rx_distance(mesh)
+        self.assertLess(abs(rx[0]), 0.1)
+
+    def test_hanging_wall_of_dipping_fault(self):
+        # 45-degree east-dipping fault: a site above the fault plane has
+        # rjb = 0 (inside the surface projection) but a nonzero rtor
+        # (distance to the trace)
+        surface = self._make_surface(dip=45.0)
+        mesh = Mesh(numpy.array([0.05]), numpy.array([0.5]), depths=None)
+        rjb = surface.get_joyner_boore_distance(mesh)
+        rtor = surface.get_tor_distance(mesh)
+        self.assertAlmostEqual(rjb[0], 0.0, delta=0.01)
+        self.assertAlmostEqual(rtor[0], 5.56, delta=0.05)
+
+    def test_footwall_symmetry(self):
+        # rtor is unsigned: symmetric sites on either side of a vertical
+        # fault get the same value
+        surface = self._make_surface()
+        mesh = Mesh(numpy.array([0.1, -0.1]), numpy.array([0.5, 0.5]),
+                    depths=None)
+        rtor = surface.get_tor_distance(mesh)
+        self.assertAlmostEqual(rtor[0], rtor[1], places=5)
+
+    def test_far_site(self):
+        # site ~5 degrees away: rtor stays close to rjb for a vertical
+        # fault (both are distances to the same trace)
+        surface = self._make_surface()
+        mesh = Mesh(numpy.array([5.0]), numpy.array([0.5]), depths=None)
+        rtor = surface.get_tor_distance(mesh)
+        rjb = surface.get_joyner_boore_distance(mesh)
+        self.assertAlmostEqual(rtor[0], rjb[0], delta=1.0)
+
+    def test_consistency_with_x_l_ratio(self):
+        # get_tor_distance and get_x_l_ratio come from the same projection
+        # sweep: recomputing on the Norcia trace must be coherent
+        trace = Line([
+            Point(13.1015, 43.0131), Point(13.1332, 42.9931),
+            Point(13.1523, 42.9766), Point(13.1685, 42.9544),
+            Point(13.1627, 42.9394), Point(13.1750, 42.9201),
+            Point(13.1970, 42.9097), Point(13.2264, 42.8846),
+            Point(13.2476, 42.8449), Point(13.2482, 42.8211),
+            Point(13.2616, 42.8094), Point(13.2725, 42.7865),
+            Point(13.2813, 42.7550),
+        ])
+        surface = SimpleFaultSurface.from_fault_data(
+            trace, upper_seismogenic_depth=0.0,
+            lower_seismogenic_depth=11.0, dip=47.0, mesh_spacing=1.0)
+        mesh = Mesh(numpy.array([13.278]), numpy.array([42.767]),
+                    depths=None)
+        dists, x_ratios, l_km = surface._tor_projection(mesh)
+        numpy.testing.assert_allclose(
+            surface.get_tor_distance(mesh), dists)
+        x_l, l_km2 = surface.get_x_l_ratio(mesh)
+        numpy.testing.assert_allclose(x_l, x_ratios)
+        self.assertEqual(l_km, l_km2)
+
+
+class GetTorLengthTestCase(unittest.TestCase):
+    """Tests for get_tor_length() (the FDHA `length` rupture parameter)."""
+
+    def test_norcia_trace_length(self):
+        trace = Line([
+            Point(13.1015, 43.0131), Point(13.1332, 42.9931),
+            Point(13.1523, 42.9766), Point(13.1685, 42.9544),
+            Point(13.1627, 42.9394), Point(13.1750, 42.9201),
+            Point(13.1970, 42.9097), Point(13.2264, 42.8846),
+            Point(13.2476, 42.8449), Point(13.2482, 42.8211),
+            Point(13.2616, 42.8094), Point(13.2725, 42.7865),
+            Point(13.2813, 42.7550),
+        ])
+        surface = SimpleFaultSurface.from_fault_data(
+            trace, upper_seismogenic_depth=0.0,
+            lower_seismogenic_depth=11.0, dip=47.0, mesh_spacing=1.0)
+        # same L as returned by get_x_l_ratio (~33.9 km)
+        self.assertAlmostEqual(surface.get_tor_length(), 33.9, delta=0.2)
+        mesh = Mesh(numpy.array([13.278]), numpy.array([42.767]),
+                    depths=None)
+        _x_l, l_km = surface.get_x_l_ratio(mesh)
+        self.assertAlmostEqual(surface.get_tor_length(), l_km, places=10)
