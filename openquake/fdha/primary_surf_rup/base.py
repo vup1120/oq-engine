@@ -29,6 +29,12 @@ class BasePrimarySurfRup(metaclass=abc.ABCMeta):
     Abstract base class for primary surface rupture probability models.
     """
 
+    #: Reference-line treatment this model needs when the source has no
+    #: continuous fault trace (multiFaultSource / kite sections). Mirrors the
+    #: declarative class-attribute pattern used in oq-pfdha; inert until the
+    #: Phase 2 multi-fault geometry work consumes it.
+    MULTIFAULT_REFERENCE_LINE = "lcp"
+
     @abc.abstractmethod
     def get_prob(self, ctx):
         """
