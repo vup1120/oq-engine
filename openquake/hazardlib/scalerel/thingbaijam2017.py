@@ -115,6 +115,14 @@ class ThingbaijamStrikeSlip(BaseMSRSigma, BaseASRSigma):
         """Returns std for rupture width."""
         return 0.105
 
+    def get_average_displacement(self, mag):
+        """Calculates median average slip (in m) from magnitude."""
+        return 10.0 ** (-4.032 + 0.558 * mag)
+
+    def get_std_dev_displacement(self, mag):
+        """Returns std of log10 average slip."""
+        return 0.227
+
 
 class ThingbaijamNormalFault(BaseMSRSigma, BaseASRSigma):
     """
@@ -159,6 +167,14 @@ class ThingbaijamNormalFault(BaseMSRSigma, BaseASRSigma):
         """Returns std for rupture width."""
         return 0.128
 
+    def get_average_displacement(self, mag):
+        """Calculates median average slip (in m) from magnitude."""
+        return 10.0 ** (-4.967 + 0.693 * mag)
+
+    def get_std_dev_displacement(self, mag):
+        """Returns std of log10 average slip."""
+        return 0.195
+
 
 class ThingbaijamReverseFault(BaseMSRSigma, BaseASRSigma):
     """
@@ -202,3 +218,11 @@ class ThingbaijamReverseFault(BaseMSRSigma, BaseASRSigma):
     def get_std_dev_width(self, mag):
         """Returns std for rupture width."""
         return 0.087
+
+    def get_average_displacement(self, mag):
+        """Calculates median average slip (in m) from magnitude."""
+        return 10.0 ** (-3.156 + 0.451 * mag)
+
+    def get_std_dev_displacement(self, mag):
+        """Returns std of log10 average slip."""
+        return 0.149

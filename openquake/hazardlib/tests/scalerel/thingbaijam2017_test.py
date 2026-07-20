@@ -106,3 +106,37 @@ class ThingbaijamStrikeSlipTestCase(BaseMSRTestCase):
         self.assertEqual(msr.get_std_dev_length(7.0), 0.151)
         self.assertEqual(msr.get_std_dev_width(7.0), 0.105)
 
+
+
+class ThingbaijamDisplacementTestCase(BaseMSRTestCase):
+    '''
+    Tests for the average-slip relationships of Thingbaijam et al. (2017)
+    for crustal events, used for fault displacement hazard analysis.
+    Golden values pinned to the oq-pfdha reference implementation.
+    '''
+
+    MSR_CLASS = ThingbaijamStrikeSlip
+
+    def test_average_displacement(self):
+        from openquake.hazardlib.scalerel.thingbaijam2017 import (
+            ThingbaijamNormalFault, ThingbaijamReverseFault)
+        msr = ThingbaijamStrikeSlip()
+        numpy.testing.assert_allclose(
+            msr.get_average_displacement(6.0), 0.207014, rtol=1e-5)
+        numpy.testing.assert_allclose(
+            msr.get_average_displacement(7.0), 0.748170, rtol=1e-5)
+        self.assertEqual(msr.get_std_dev_displacement(7.0), 0.227)
+
+        msr = ThingbaijamNormalFault()
+        numpy.testing.assert_allclose(
+            msr.get_average_displacement(6.0), 0.155239, rtol=1e-5)
+        numpy.testing.assert_allclose(
+            msr.get_average_displacement(7.5), 1.700200, rtol=1e-5)
+        self.assertEqual(msr.get_std_dev_displacement(7.0), 0.195)
+
+        msr = ThingbaijamReverseFault()
+        numpy.testing.assert_allclose(
+            msr.get_average_displacement(6.0), 0.354813, rtol=1e-5)
+        numpy.testing.assert_allclose(
+            msr.get_average_displacement(7.0), 1.002305, rtol=1e-5)
+        self.assertEqual(msr.get_std_dev_displacement(7.0), 0.149)

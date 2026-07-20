@@ -394,4 +394,152 @@ class WC1994(BaseMSRSigma, BaseASRSigma):
         else:
             # normal
             return 0.31
-    
+
+    def get_average_displacement(self, mag, rake, return_sigma=False):
+        """
+        Calculates median average displacement (AD, in metres) from
+        magnitude, from their Table 2B regression log10(AD) = a + b * M.
+
+        The values are a function of both magnitude and rake. Setting the
+        rake to ``None`` causes their "All" rupture-types to be applied.
+        NB: for thrust/reverse events the "All" coefficients are used as
+        well, since Wells and Coppersmith (1994) report their reverse
+        displacement regressions as not significant at the 95% level and
+        recommend the all-slip-type relation instead.
+
+        :param mag:
+            Moment magnitude.
+        :param rake:
+            Rake angle (the rupture propagation direction) in degrees,
+            from -180 to 180.
+        :param return_sigma:
+            If True, returns a ``(median, sigma)`` pair where sigma is the
+            standard deviation of log10(AD).
+        """
+        if rake is not None and (
+                (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135)):
+            # strike slip
+            ad, sigma = 10.0 ** (-6.32 + 0.90 * mag), 0.28
+        elif rake is not None and rake < 0:
+            # normal
+            ad, sigma = 10.0 ** (-4.45 + 0.63 * mag), 0.33
+        else:
+            # their "All" case, also covering thrust/reverse
+            ad, sigma = 10.0 ** (-4.80 + 0.69 * mag), 0.36
+        return (ad, sigma) if return_sigma else ad
+
+    def get_maximum_displacement(self, mag, rake, return_sigma=False):
+        """
+        Calculates median maximum displacement (MD, in metres) from
+        magnitude, from their Table 2B regression log10(MD) = a + b * M.
+
+        The values are a function of both magnitude and rake. Setting the
+        rake to ``None`` causes their "All" rupture-types to be applied.
+        NB: for thrust/reverse events the "All" coefficients are used as
+        well, since Wells and Coppersmith (1994) report their reverse
+        displacement regressions as not significant at the 95% level and
+        recommend the all-slip-type relation instead.
+
+        :param mag:
+            Moment magnitude.
+        :param rake:
+            Rake angle (the rupture propagation direction) in degrees,
+            from -180 to 180.
+        :param return_sigma:
+            If True, returns a ``(median, sigma)`` pair where sigma is the
+            standard deviation of log10(MD).
+        """
+        if rake is not None and (
+                (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135)):
+            # strike slip
+            md, sigma = 10.0 ** (-7.03 + 1.03 * mag), 0.34
+        elif rake is not None and rake < 0:
+            # normal
+            md, sigma = 10.0 ** (-5.90 + 0.89 * mag), 0.38
+        else:
+            # their "All" case, also covering thrust/reverse
+            md, sigma = 10.0 ** (-5.46 + 0.82 * mag), 0.42
+        return (md, sigma) if return_sigma else md
+
+    def get_median_mag_from_ad(self, ad, rake):
+        """
+        Calculates median magnitude from average displacement, from their
+        Table 2B regression M = a + b * log10(AD).
+
+        Setting the rake to ``None`` causes their "All" rupture-types
+        to be applied; thrust/reverse also uses "All" (see
+        :meth:`get_average_displacement`).
+
+        :param ad:
+            Average displacement in metres.
+        :param rake:
+            Rake angle (the rupture propagation direction) in degrees,
+            from -180 to 180.
+        """
+        if rake is not None and (
+                (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135)):
+            # strike slip
+            return 7.04 + 0.89 * log10(ad)
+        elif rake is not None and rake < 0:
+            # normal
+            return 6.78 + 0.65 * log10(ad)
+        else:
+            # their "All" case, also covering thrust/reverse
+            return 6.93 + 0.82 * log10(ad)
+
+    def get_std_dev_mag_from_ad(self, ad, rake):
+        """
+        Returns std for magnitude. Average displacement is ignored.
+        """
+        if rake is not None and (
+                (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135)):
+            # strike slip
+            return 0.28
+        elif rake is not None and rake < 0:
+            # normal
+            return 0.33
+        else:
+            # their "All" case, also covering thrust/reverse
+            return 0.39
+
+    def get_median_mag_from_md(self, md, rake):
+        """
+        Calculates median magnitude from maximum displacement, from their
+        Table 2B regression M = a + b * log10(MD).
+
+        Setting the rake to ``None`` causes their "All" rupture-types
+        to be applied; thrust/reverse also uses "All" (see
+        :meth:`get_maximum_displacement`).
+
+        :param md:
+            Maximum displacement in metres.
+        :param rake:
+            Rake angle (the rupture propagation direction) in degrees,
+            from -180 to 180.
+        """
+        if rake is not None and (
+                (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135)):
+            # strike slip
+            return 6.81 + 0.78 * log10(md)
+        elif rake is not None and rake < 0:
+            # normal
+            return 6.61 + 0.71 * log10(md)
+        else:
+            # their "All" case, also covering thrust/reverse
+            return 6.69 + 0.74 * log10(md)
+
+    def get_std_dev_mag_from_md(self, md, rake):
+        """
+        Returns std for magnitude. Maximum displacement is ignored.
+        """
+        if rake is not None and (
+                (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135)):
+            # strike slip
+            return 0.29
+        elif rake is not None and rake < 0:
+            # normal
+            return 0.34
+        else:
+            # their "All" case, also covering thrust/reverse
+            return 0.40
+

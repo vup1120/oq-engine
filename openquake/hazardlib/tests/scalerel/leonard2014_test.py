@@ -82,6 +82,29 @@ class Leonard2014_SCRTestCase(BaseMSRTestCase):
         """
         self.assertAlmostEqual(self.msr.get_std_dev_mag(1000.0, 0.0), 0.0)
 
+    def test_median_width(self):
+        """
+        Test the FDHA width relation W = 10 ** ((m - a) / 2.5) with the
+        SCR constants a = 4.22 strike-slip, a = 4.14 dip-slip
+        (Mammarella et al. 2024, Table 1). Golden values pinned to the
+        oq-pfdha reference implementation.
+        """
+        # dip-slip
+        self.assertAlmostEqual(
+            self.msr.get_median_width(6.0, 90), 5.54626, places=5)
+        self.assertAlmostEqual(
+            self.msr.get_median_width(7.0, -90), 13.93157, places=5)
+        # strike-slip
+        self.assertAlmostEqual(
+            self.msr.get_median_width(6.0, 0), 5.15229, places=5)
+        self.assertAlmostEqual(
+            self.msr.get_median_width(7.0, 180), 12.94196, places=5)
+        # average of the two curves
+        self.assertAlmostEqual(
+            self.msr.get_median_width(6.0, None), 5.34564, places=5)
+        # sigma of log10(W)
+        self.assertAlmostEqual(self.msr.get_std_dev_width(6.0, 90), 0.15)
+
 
 class Leonard2014_InterplateTestCase(Leonard2014_SCRTestCase):
     """
@@ -127,3 +150,26 @@ class Leonard2014_InterplateTestCase(Leonard2014_SCRTestCase):
         self._test_get_median_mag(66.0, 90, 5.81954, places=5)
         self._test_get_median_mag(6600.0, 0, 7.80954, places=5)
         self._test_get_median_mag(6600.0, 90, 7.81954, places=5)
+
+    def test_median_width(self):
+        """
+        Test the FDHA width relation W = 10 ** ((m - a) / 2.5) with the
+        interplate constants a = 3.88 strike-slip, a = 3.63 dip-slip
+        (Mammarella et al. 2024, Table 1). Golden values pinned to the
+        oq-pfdha reference implementation.
+        """
+        # dip-slip
+        self.assertAlmostEqual(
+            self.msr.get_median_width(6.0, 90), 8.87156, places=5)
+        self.assertAlmostEqual(
+            self.msr.get_median_width(7.0, -90), 22.28435, places=5)
+        # strike-slip
+        self.assertAlmostEqual(
+            self.msr.get_median_width(6.0, 0), 7.04693, places=5)
+        self.assertAlmostEqual(
+            self.msr.get_median_width(7.0, 180), 17.70109, places=5)
+        # average of the two curves
+        self.assertAlmostEqual(
+            self.msr.get_median_width(6.0, None), 7.90679, places=5)
+        # sigma of log10(W)
+        self.assertAlmostEqual(self.msr.get_std_dev_width(6.0, 90), 0.15)

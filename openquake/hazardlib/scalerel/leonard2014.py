@@ -73,6 +73,33 @@ class Leonard2014_SCR(BaseMSRSigma, BaseASRSigma):
         """
         return 0.0
 
+    def get_median_width(self, mag, rake):
+        """
+        Calculates median rupture width (in km) from magnitude, inverting
+        the Leonard (2014) SCR relation m = a + 2.5 * log10(W), with
+        a = 4.22 for strike-slip and a = 4.14 for dip-slip faulting
+        (the constants used by Mammarella et al. 2024, Table 1).
+
+        Setting the rake to ``None`` returns the average of the
+        strike-slip and dip-slip curves.
+        """
+        if rake is None:
+            # average of strike-slip and dip-slip curves
+            return power(10.0, (mag - 4.18) / 2.5)
+        elif (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135):
+            # strike-slip
+            return power(10.0, (mag - 4.22) / 2.5)
+        else:
+            # dip-slip (thrust or normal)
+            return power(10.0, (mag - 4.14) / 2.5)
+
+    def get_std_dev_width(self, mag, rake):
+        """
+        Returns the standard deviation of log10(W). Magnitude and rake
+        are ignored.
+        """
+        return 0.15
+
 
 class Leonard2014_Interplate(BaseMSRSigma, BaseASRSigma):
     """
@@ -121,3 +148,30 @@ class Leonard2014_Interplate(BaseMSRSigma, BaseASRSigma):
         Returns None for now
         """
         return 0.0
+
+    def get_median_width(self, mag, rake):
+        """
+        Calculates median rupture width (in km) from magnitude, inverting
+        the Leonard (2014) interplate relation m = a + 2.5 * log10(W),
+        with a = 3.88 for strike-slip and a = 3.63 for dip-slip faulting
+        (the constants used by Mammarella et al. 2024, Table 1).
+
+        Setting the rake to ``None`` returns the average of the
+        strike-slip and dip-slip curves.
+        """
+        if rake is None:
+            # average of strike-slip and dip-slip curves
+            return power(10.0, (mag - 3.755) / 2.5)
+        elif (-45 <= rake <= 45) or (rake >= 135) or (rake <= -135):
+            # strike-slip
+            return power(10.0, (mag - 3.88) / 2.5)
+        else:
+            # dip-slip (thrust or normal)
+            return power(10.0, (mag - 3.63) / 2.5)
+
+    def get_std_dev_width(self, mag, rake):
+        """
+        Returns the standard deviation of log10(W). Magnitude and rake
+        are ignored.
+        """
+        return 0.15
